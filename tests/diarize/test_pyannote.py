@@ -6,6 +6,7 @@ from speechtotext.models import SpeakerTurn
 
 
 def _fake_annotation(turns: list[tuple[float, float, str]]):
+    """Build a fake pyannote 4.x DiarizeOutput wrapping a fake Annotation."""
     ann = MagicMock()
 
     def _itertracks(yield_label: bool = True):
@@ -14,7 +15,10 @@ def _fake_annotation(turns: list[tuple[float, float, str]]):
             yield seg, None, lab
 
     ann.itertracks.side_effect = _itertracks
-    return ann
+    # 4.x: pipeline returns DiarizeOutput with .speaker_diarization = Annotation
+    wrapper = MagicMock()
+    wrapper.speaker_diarization = ann
+    return wrapper
 
 
 def test_diarize_returns_speaker_turns(tmp_path: Path):

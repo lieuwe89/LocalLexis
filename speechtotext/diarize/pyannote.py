@@ -33,7 +33,10 @@ class PyannoteDiarizer:
         kwargs: dict = {}
         if num_speakers is not None:
             kwargs["num_speakers"] = num_speakers
-        annotation = self._pipeline(str(wav_path), **kwargs)
+        result = self._pipeline(str(wav_path), **kwargs)
+        # pyannote 4.x returns a DiarizeOutput wrapping the Annotation;
+        # 3.x returns the Annotation directly.
+        annotation = getattr(result, "speaker_diarization", result)
         turns: list[SpeakerTurn] = []
         for segment, _track, label in annotation.itertracks(yield_label=True):
             turns.append(
