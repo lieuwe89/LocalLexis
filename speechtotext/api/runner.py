@@ -20,7 +20,7 @@ def run_transcribe_job(
     loop = asyncio.new_event_loop()
 
     def _emit_sync(event):
-        asyncio.run_coroutine_threadsafe(registry.publish(job_id, event), loop).result()
+        asyncio.run_coroutine_threadsafe(registry.publish(job_id, event), loop).result(timeout=5.0)
 
     def _work():
         try:
