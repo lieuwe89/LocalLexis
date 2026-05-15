@@ -24,6 +24,8 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    "pytest-asyncio>=0.23",
+    "anyio>=4.0",
 ]
 api = [
     "fastapi>=0.110",
@@ -43,3 +45,4 @@ exclude = ["tests*"]
 testpaths = ["tests"]
 addopts = "-ra"
 markers = ["integration: end-to-end tests using real models (slow)"]
+asyncio_mode = "auto"
