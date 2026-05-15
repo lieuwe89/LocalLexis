@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
 import threading
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Callable
 
 import typer
+from rich.console import Console
+from rich.table import Table
 
 from speechtotext import relabel as relabel_module
+from speechtotext.devices import list_inputs
 from speechtotext.asr.faster_whisper import FasterWhisperASR
 from speechtotext.backend import resolve_backend
 from speechtotext.config import DEFAULT_CONFIG_PATH, load_config
@@ -193,3 +198,32 @@ def doctor(
         ok = False
 
     raise typer.Exit(code=0 if ok else 1)
+
+
+@app.command()
+def devices(
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+    include_all: Annotated[bool, typer.Option("--all")] = False,
+) -> None:
+    inputs = list_inputs(include_all=include_all)
+    if not inputs:
+        typer.echo("no audio inputs detected; run `stt doctor`", err=True)
+        raise typer.Exit(code=1)
+    if json_output:
+        typer.echo(json.dumps([asdict(d) for d in inputs], indent=2))
+        return
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("idx", justify="right")
+    table.add_column("name")
+    table.add_column("ch", justify="right")
+    table.add_column("default", justify="center")
+    table.add_column("hint")
+    for d in inputs:
+        table.add_row(
+            str(d.index),
+            d.name,
+            str(d.channels),
+            "*" if d.default else "",
+            d.hint,
+        )
+    Console().print(table)

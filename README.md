@@ -35,6 +35,25 @@ stt watch ~/Recordings              # daemon: new files → transcribed
 stt relabel meeting.json SPEAKER_00=Alice SPEAKER_01=Bob
 ```
 
+### Recording meetings (system audio)
+
+`stt record` captures the default mic input — not what the other meeting
+participants say through your speakers. To capture both sides:
+
+- **macOS:** install BlackHole (https://existential.audio/blackhole/), create
+  an Aggregate Device in Audio MIDI Setup combining your mic + BlackHole,
+  then:
+  ```bash
+  stt devices                                    # find the aggregate's name
+  stt record --device "Aggregate (Mic+BlackHole)"
+  ```
+- **Linux (PulseAudio):** every output has a `.monitor` source. List with
+  `stt devices` (look for `hint: loopback`).
+- **Simplest:** use the meeting tool's built-in recorder, then
+  `stt transcribe meeting.mp4`.
+
+Use `stt devices --json` for scripting.
+
 ## Output format
 
 `<audio>.txt`:
