@@ -52,3 +52,43 @@ def test_get_job_returns_state(tmp_path: Path, app_with_fake_runner):
     body = r.json()
     assert body["id"] == job_id
     assert body["status"] == JobStatus.pending.value
+
+
+import json
+import threading
+import time
+
+from speechtotext.api.events import CompleteEvent, StageEvent
+
+
+def test_stream_yields_events_until_complete(tmp_path, app_with_fake_runner):
+    app, _ = app_with_fake_runner
+    audio = tmp_path / "x.mp3"
+    audio.write_bytes(b"fake")
+    client = TestClient(app)
+
+    job_id = client.post("/jobs/transcribe", json={"path": str(audio)}).json()["job_id"]
+    reg = app.state.jobs
+
+    def producer():
+        time.sleep(0.05)
+        import asyncio
+        asyncio.run(reg.publish(job_id, StageEvent(stage="asr", percent=0.5)))
+        asyncio.run(reg.publish(job_id, CompleteEvent(
+            transcript_id="x", paths={"txt": "/x.txt", "json": "/x.json"}
+        )))
+
+    threading.Thread(target=producer, daemon=True).start()
+
+    with client.stream("GET", f"/jobs/{job_id}/stream") as r:
+        assert r.status_code == 200
+        events = []
+        for line in r.iter_lines():
+            if not line or not line.startswith("data: "):
+                continue
+            events.append(json.loads(line[len("data: "):]))
+            if events[-1]["type"] == "complete":
+                break
+
+    assert events[0]["type"] == "stage"
+    assert events[-1]["type"] == "complete"

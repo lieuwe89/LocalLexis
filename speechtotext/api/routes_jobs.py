@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
 
 from speechtotext.api import runner
 
@@ -50,3 +53,22 @@ def get_job(job_id: str, request: Request) -> dict:
         "audio_path": rec.audio_path,
         "paths": rec.paths,
     }
+
+
+@router.get("/jobs/{job_id}/stream")
+async def stream_job(job_id: str, request: Request):
+    registry = request.app.state.jobs
+    try:
+        registry.get(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
+
+    async def event_gen():
+        async for ev in registry.subscribe(job_id):
+            yield {"event": "message", "data": _json_dumps(asdict(ev))}
+
+    return EventSourceResponse(event_gen())
+
+
+def _json_dumps(obj: dict) -> str:
+    return json.dumps(obj, ensure_ascii=False)
