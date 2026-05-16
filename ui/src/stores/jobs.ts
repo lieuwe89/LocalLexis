@@ -11,6 +11,7 @@ interface JobView {
   lines: { speaker: string; ts: number; text: string }[];
   error: string | null;
   paths: Record<string, string>;
+  transcriptId: string | null;
 }
 
 interface JobsState {
@@ -21,13 +22,13 @@ interface JobsState {
 export const useJobs = create<JobsState>((set) => ({
   byId: {},
   start: (jobId) => {
-    set(s => ({ byId: { ...s.byId, [jobId]: { id: jobId, status: 'pending', stage: '', percent: 0, lines: [], error: null, paths: {} } } }));
+    set(s => ({ byId: { ...s.byId, [jobId]: { id: jobId, status: 'pending', stage: '', percent: 0, lines: [], error: null, paths: {}, transcriptId: null } } }));
     const apply = (mut: (v: JobView) => JobView) =>
       set(s => ({ byId: { ...s.byId, [jobId]: mut(s.byId[jobId]) } }));
     subscribeJob(jobId, (ev: SseEvent) => {
       if (ev.type === 'stage') apply(v => ({ ...v, status: 'running', stage: ev.stage, percent: ev.percent }));
       else if (ev.type === 'line') apply(v => ({ ...v, lines: [...v.lines, { speaker: ev.speaker, ts: ev.ts, text: ev.text }] }));
-      else if (ev.type === 'complete') apply(v => ({ ...v, status: 'complete', paths: ev.paths }));
+      else if (ev.type === 'complete') apply(v => ({ ...v, status: 'complete', paths: ev.paths, transcriptId: ev.transcript_id }));
       else if (ev.type === 'error') apply(v => ({ ...v, status: 'failed', error: ev.message }));
     }).catch(err => apply(v => ({ ...v, status: 'failed', error: String(err) })));
   },

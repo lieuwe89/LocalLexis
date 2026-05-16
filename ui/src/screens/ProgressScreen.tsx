@@ -20,11 +20,11 @@ export function ProgressScreen({ jobId, audioPath, onComplete }: Props) {
   const job = useJobs(s => s.byId[jobId]);
 
   useEffect(() => {
-    if (job?.status === 'complete' && job.paths.json) {
-      const transcriptId = job.paths.json.split('/').pop()?.replace(/\.json$/, '') ?? jobId;
+    if (job?.status === 'complete') {
+      const transcriptId = job.transcriptId ?? jobId;
       onComplete(transcriptId);
     }
-  }, [job?.status, job?.paths.json, jobId, onComplete]);
+  }, [job?.status, job?.transcriptId, jobId, onComplete]);
 
   if (!job) return null;
 
