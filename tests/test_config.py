@@ -8,7 +8,7 @@ from speechtotext.config import Config, WatchConfig, load_config
 def test_default_config_when_no_file(tmp_path: Path):
     cfg = load_config(config_path=tmp_path / "missing.toml")
     assert cfg.backend in {"auto", "cpu", "cuda", "mps"}
-    assert cfg.asr_model == "large-v3"
+    assert cfg.asr_model == "base.en"
     assert cfg.hf_token is None
     assert cfg.default_out_dir is None
     assert cfg.watch.recursive is False

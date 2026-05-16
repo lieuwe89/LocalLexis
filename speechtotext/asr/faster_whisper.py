@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 from pathlib import Path
 from typing import Callable, Literal
@@ -7,6 +8,22 @@ from typing import Callable, Literal
 from faster_whisper import WhisperModel
 
 from speechtotext.models import Segment
+
+
+def _resolve_bundled_model(name: str) -> str | None:
+    """Look for a bundled faster-whisper model dir matching `name`.
+
+    Searched env var `LOCALSCRIBE_BUNDLED_MODELS` (set by the Tauri shell) for
+    a subdirectory named `faster-whisper-<name>`. Returns its absolute path if
+    it contains a model.bin, else None.
+    """
+    root = os.environ.get("LOCALSCRIBE_BUNDLED_MODELS")
+    if not root:
+        return None
+    candidate = Path(root) / f"faster-whisper-{name}"
+    if (candidate / "model.bin").is_file():
+        return str(candidate)
+    return None
 
 _DEVICE_MAP: dict[str, tuple[str, str]] = {
     "cpu": ("cpu", "int8"),
@@ -22,16 +39,17 @@ class CancelledError(Exception):
 class FasterWhisperASR:
     def __init__(
         self,
-        model_size: str = "large-v3",
+        model_size: str = "base.en",
         backend: Literal["cpu", "cuda", "mps"] = "cpu",
         download_root: Path | None = None,
     ) -> None:
         device, compute_type = _DEVICE_MAP[backend]
+        bundled = _resolve_bundled_model(model_size)
         self._model = WhisperModel(
-            model_size_or_path=model_size,
+            model_size_or_path=bundled or model_size,
             device=device,
             compute_type=compute_type,
-            download_root=str(download_root) if download_root else None,
+            download_root=None if bundled else (str(download_root) if download_root else None),
         )
 
     def transcribe(

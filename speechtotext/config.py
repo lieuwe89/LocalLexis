@@ -25,7 +25,7 @@ class WatchConfig:
 @dataclass
 class Config:
     backend: Backend = "auto"
-    asr_model: str = "large-v3"
+    asr_model: str = "base.en"
     hf_token: str | None = None
     model_cache_dir: Path = field(default_factory=lambda: DEFAULT_MODEL_CACHE)
     default_out_dir: Path | None = None
@@ -60,7 +60,7 @@ def load_config(config_path: Path = DEFAULT_CONFIG_PATH) -> Config:
 
     return Config(
         backend=backend,  # type: ignore[arg-type]
-        asr_model=str(raw.get("asr_model", "large-v3")),
+        asr_model=str(raw.get("asr_model", "base.en")),
         hf_token=raw.get("hf_token"),
         model_cache_dir=_expand(raw.get("model_cache_dir", str(DEFAULT_MODEL_CACHE))),
         default_out_dir=_expand(raw["default_out_dir"])

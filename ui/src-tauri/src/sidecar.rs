@@ -2,6 +2,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct SidecarUrl(pub Mutex<Option<String>>);
@@ -20,10 +21,22 @@ pub fn sidecar_url(state: State<SidecarUrl>) -> Option<String> {
 }
 
 pub fn spawn(app: &AppHandle) -> Result<(), String> {
+    let mut env: HashMap<String, String> = HashMap::new();
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let models_dir = resource_dir.join("resources").join("models");
+        if models_dir.is_dir() {
+            env.insert(
+                "LOCALSCRIBE_BUNDLED_MODELS".to_string(),
+                models_dir.to_string_lossy().to_string(),
+            );
+        }
+    }
+
     let sidecar = app
         .shell()
         .sidecar("localscribe-sidecar")
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+        .envs(env);
 
     let (mut rx, child) = sidecar.spawn().map_err(|e| e.to_string())?;
     let child_state: State<SidecarChild> = app.state();

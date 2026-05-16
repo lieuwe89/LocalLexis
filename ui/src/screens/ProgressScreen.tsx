@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useJobs, cancelTranscribe } from '../stores/jobs';
 
-const STAGES = ['ingest', 'asr', 'diarize', 'merge', 'write'] as const;
+const STAGES = ['load', 'ingest', 'asr', 'diarize', 'merge', 'write'] as const;
+
+const STAGE_LABELS: Record<typeof STAGES[number], string> = {
+  load:    'load models',
+  ingest:  'ingest',
+  asr:     'transcribe',
+  diarize: 'diarize',
+  merge:   'merge',
+  write:   'write',
+};
 
 function fmtTimestamp(secs: number) {
   const h = Math.floor(secs / 3600);
@@ -25,17 +34,17 @@ interface Props {
 
 export function ProgressScreen({ jobId, audioPath, onComplete, onCancelled }: Props) {
   const job = useJobs(s => s.byId[jobId]);
-  const [elapsed, setElapsed] = useState(0);
+  const startedAt = job?.startedAt ?? Date.now();
+  const [elapsed, setElapsed] = useState(() => (Date.now() - startedAt) / 1000);
   const [cancelling, setCancelling] = useState(false);
-  const startRef = useRef<number>(Date.now());
   const lastPctRef = useRef<number>(0);
   const lastChangeRef = useRef<number>(Date.now());
 
   useEffect(() => {
-    startRef.current = Date.now();
-    const id = setInterval(() => setElapsed((Date.now() - startRef.current) / 1000), 250);
+    setElapsed((Date.now() - startedAt) / 1000);
+    const id = setInterval(() => setElapsed((Date.now() - startedAt) / 1000), 250);
     return () => clearInterval(id);
-  }, [jobId]);
+  }, [startedAt]);
 
   useEffect(() => {
     if (job?.status === 'complete') {
@@ -93,7 +102,7 @@ export function ProgressScreen({ jobId, audioPath, onComplete, onCancelled }: Pr
           const cls = i < currentIdx ? 'done' : i === currentIdx ? 'active' : '';
           return (
             <span key={s} className={'stage-chip ' + cls}>
-              {s}{i === currentIdx ? ` ${Math.round(job.percent * 100)}%` : ''}
+              {STAGE_LABELS[s]}{i === currentIdx ? ` ${Math.round(job.percent * 100)}%` : ''}
             </span>
           );
         })}

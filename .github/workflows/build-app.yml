@@ -70,6 +70,9 @@ jobs:
         run: |
           Copy-Item dist\localscribe-sidecar.exe ui\src-tauri\binaries\localscribe-sidecar-${{ matrix.target }}.exe
 
+      - name: Download bundled ASR models
+        run: python scripts/download_bundled_models.py
+
       - name: Install JS deps
         working-directory: ui
         run: pnpm install --frozen-lockfile

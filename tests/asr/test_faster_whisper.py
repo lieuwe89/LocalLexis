@@ -68,3 +68,26 @@ def test_language_passed_through(tmp_path: Path):
         asr = FasterWhisperASR(model_size="tiny", backend="cpu")
         asr.transcribe(wav, language="nl")
         assert instance.transcribe.call_args.kwargs["language"] == "nl"
+
+
+def test_bundled_model_takes_precedence_over_name(tmp_path: Path, monkeypatch):
+    bundled_root = tmp_path / "bundled"
+    model_dir = bundled_root / "faster-whisper-base.en"
+    model_dir.mkdir(parents=True)
+    (model_dir / "model.bin").write_bytes(b"fake")
+    monkeypatch.setenv("LOCALSCRIBE_BUNDLED_MODELS", str(bundled_root))
+
+    with patch("speechtotext.asr.faster_whisper.WhisperModel") as Model:
+        FasterWhisperASR(model_size="base.en", backend="cpu")
+        kwargs = Model.call_args.kwargs
+        assert kwargs["model_size_or_path"] == str(model_dir)
+        assert kwargs["download_root"] is None
+
+
+def test_falls_back_to_name_when_no_bundled_match(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("LOCALSCRIBE_BUNDLED_MODELS", str(tmp_path))
+    with patch("speechtotext.asr.faster_whisper.WhisperModel") as Model:
+        FasterWhisperASR(model_size="medium", backend="cpu", download_root=tmp_path / "cache")
+        kwargs = Model.call_args.kwargs
+        assert kwargs["model_size_or_path"] == "medium"
+        assert kwargs["download_root"] == str(tmp_path / "cache")

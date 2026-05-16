@@ -11,8 +11,14 @@ const INFO: Record<string, string> = {
     '"cpu" works everywhere but is slowest. "cuda" requires an NVIDIA GPU. ' +
     '"mps" uses Apple Silicon GPU (partial — falls back to CPU for ASR).',
   asr_model:
-    'Whisper model name passed to faster-whisper. Larger = more accurate, slower, more memory. ' +
-    'Common: "tiny", "base", "small", "medium", "large-v3". The model downloads to the cache dir on first use.',
+    'Whisper model used for transcription. Larger = more accurate, slower, more memory.\n\n' +
+    'Sizes & first-run download:\n' +
+    '• tiny / tiny.en — ~75 MB\n' +
+    '• base / base.en — ~140 MB (bundled, no download)\n' +
+    '• small / small.en — ~470 MB\n' +
+    '• medium / medium.en — ~1.5 GB\n' +
+    '• large-v3 — ~3 GB (several minutes on a typical connection)\n\n' +
+    'Anything other than the bundled default downloads to the cache dir on first use, with no visible progress until it finishes. The .en variants are English-only and a bit faster.',
   hf_token:
     'Hugging Face access token, required by pyannote diarization to download the speaker model. ' +
     'Create one at huggingface.co/settings/tokens and accept the pyannote/speaker-diarization-3.1 license.',

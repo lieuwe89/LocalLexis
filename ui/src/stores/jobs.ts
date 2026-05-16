@@ -12,6 +12,7 @@ interface JobView {
   error: string | null;
   paths: Record<string, string>;
   transcriptId: string | null;
+  startedAt: number;
 }
 
 interface JobsState {
@@ -22,7 +23,7 @@ interface JobsState {
 export const useJobs = create<JobsState>((set) => ({
   byId: {},
   start: (jobId) => {
-    set(s => ({ byId: { ...s.byId, [jobId]: { id: jobId, status: 'pending', stage: '', percent: 0, lines: [], error: null, paths: {}, transcriptId: null } } }));
+    set(s => ({ byId: { ...s.byId, [jobId]: { id: jobId, status: 'pending', stage: '', percent: 0, lines: [], error: null, paths: {}, transcriptId: null, startedAt: Date.now() } } }));
     const apply = (mut: (v: JobView) => JobView) =>
       set(s => ({ byId: { ...s.byId, [jobId]: mut(s.byId[jobId]) } }));
     subscribeJob(jobId, (ev: SseEvent) => {

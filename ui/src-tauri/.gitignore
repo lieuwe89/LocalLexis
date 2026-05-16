@@ -8,3 +8,6 @@
 
 # PyInstaller sidecar binary (large, built by CI)
 binaries/*
+
+# Bundled ASR models (large, fetched via scripts/download_models.py)
+resources/models/

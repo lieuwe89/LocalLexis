@@ -66,8 +66,10 @@ def run_transcribe_job(
 
     def _work() -> None:
         try:
+            emit(StageEvent(stage="load", percent=0.0))
             cfg = load_config(config_path=config_path)
             pipeline, _resolved = _build_pipeline(cfg, backend)
+            emit(StageEvent(stage="load", percent=1.0))
             transcript: Transcript = pipeline.run(
                 audio,
                 language=None if language in (None, "auto") else language,
