@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Icon, type IconName } from '../primitives/Icon';
 import { useLibrary } from '../stores/library';
 import { useRecording } from '../stores/recording';
@@ -18,7 +19,8 @@ export function Sidebar({ route, setRoute, setCurrentTranscriptId }: {
   currentTranscriptId: string | null;
   setCurrentTranscriptId: (id: string | null) => void;
 }) {
-  const recent = useLibrary(s => s.items.slice(0, 5));
+  const items = useLibrary(s => s.items);
+  const recent = useMemo(() => items.slice(0, 5), [items]);
   const recording = useRecording(s => s.active);
   const loadTranscript = useTranscripts(s => s.load);
 

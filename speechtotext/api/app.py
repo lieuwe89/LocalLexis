@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from speechtotext.api.jobs import JobRegistry
 from speechtotext.api.routes_config import router as config_router
@@ -16,6 +17,13 @@ from speechtotext.config import load_config
 
 def create_app() -> FastAPI:
     app = FastAPI(title="LocalScribe", version="0.1.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^(tauri://.*|https?://(localhost|127\.0\.0\.1)(:\d+)?)$",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.state.jobs = JobRegistry()
     app.state.watcher = WatchController()
     app.state.library_dirs: set[Path] = set()

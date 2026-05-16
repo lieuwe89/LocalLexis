@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { audioDir, join } from '@tauri-apps/api/path';
 import './styles/global.css';
 import { Window } from './chrome/Window';
@@ -28,7 +28,8 @@ export default function App() {
   const [devices, setDevices] = useState<AudioDeviceDto[]>([]);
   const refreshLibrary = useLibrary(s => s.refresh);
   const loadTranscript = useTranscripts(s => s.load);
-  const recentItems = useLibrary(s => s.items.slice(0, 3));
+  const libraryItems = useLibrary(s => s.items);
+  const recentItems = useMemo(() => libraryItems.slice(0, 3), [libraryItems]);
   const currentDoc = useTranscripts(s => (tid ? s.byId[tid] : undefined));
   const relabel = useTranscripts(s => s.relabel);
   const recording = useRecording();

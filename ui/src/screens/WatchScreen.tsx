@@ -12,9 +12,15 @@ export function WatchScreen() {
   const [status, setStatus] = useState<Status | null>(null);
   const [recursive, setRecursive] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingDir, setPendingDir] = useState<string | null>(null);
 
   const refresh = async () => {
-    try { setStatus(await api<Status>('/watch/status')); } catch {}
+    try {
+      setStatus(await api<Status>('/watch/status'));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   useEffect(() => {
@@ -26,6 +32,8 @@ export function WatchScreen() {
   const pick = async () => {
     const dir = await openDialog({ directory: true, multiple: false });
     if (typeof dir !== 'string') return;
+    setPendingDir(dir);
+    setError(null);
     setBusy(true);
     try {
       await api('/watch/start', {
@@ -34,18 +42,26 @@ export function WatchScreen() {
         body: JSON.stringify({ directory: dir, recursive }),
       });
       await refresh();
-    } catch {}
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
     setBusy(false);
   };
 
   const stop = async () => {
+    setError(null);
     setBusy(true);
     try {
       await api('/watch/stop', { method: 'POST' });
+      setPendingDir(null);
       await refresh();
-    } catch {}
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
     setBusy(false);
   };
+
+  const activeDir = status?.running ? status.directory : pendingDir;
 
   return (
     <div className="watch">
@@ -57,13 +73,23 @@ export function WatchScreen() {
           </>
         ) : (
           <>
-            <button className="btn-ghost" onClick={pick} disabled={busy}>Choose folder…</button>
+            <button className="btn-ghost" onClick={pick} disabled={busy}>
+              {busy ? 'Starting…' : 'Choose folder…'}
+            </button>
             <label className="watch-recursive">
               <input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)} /> Recursive
             </label>
+            {activeDir && !status?.running && (
+              <div className="watch-pending">Selected: <code>{activeDir}</code></div>
+            )}
           </>
         )}
       </div>
+      {error && (
+        <div className="banner warn" style={{ margin: '8px 0' }}>
+          Watcher error: {error}
+        </div>
+      )}
       <div className="watch-events">
         {(status?.events || []).length === 0 && <div className="watch-empty">Waiting for new files…</div>}
         {(status?.events || []).map((e, i) => (

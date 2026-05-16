@@ -1,4 +1,4 @@
-:root {
+:root, [data-theme="dark"] {
   /* Palette — warm ink-on-paper inverted */
   --bg: #0c0c0d;
   --bg-sidebar: #08080a;
@@ -36,4 +36,35 @@
   --stage-glow: rgba(111, 217, 154, 0.025);
   --window-ring: rgba(255,255,255,0.06);
   --window-shadow: 0 30px 80px rgba(0,0,0,0.5), 0 12px 30px rgba(0,0,0,0.4);
+}
+
+[data-theme="light"] {
+  --bg: #fbfaf6;
+  --bg-sidebar: #f3f1ea;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #f7f5ee;
+  --bg-hover: #efece3;
+  --bg-active: #e7e3d6;
+
+  --line: #e2ddcf;
+  --line-strong: #cbc5b3;
+  --line-faint: #ede9dc;
+
+  --ink: #1f1d18;
+  --ink-muted: #5b574c;
+  --ink-dim: #8a8576;
+  --ink-faint: #b8b3a3;
+
+  --accent: #2faa66;
+  --accent-deep: #1f7d4a;
+  --accent-faint: rgba(47, 170, 102, 0.10);
+  --accent-line: rgba(47, 170, 102, 0.35);
+
+  --warn: #b85a2e;
+  --danger: #c8392b;
+
+  --stage-bg: #f3f1ea;
+  --stage-glow: rgba(47, 170, 102, 0.04);
+  --window-ring: rgba(0,0,0,0.06);
+  --window-shadow: 0 30px 80px rgba(0,0,0,0.08), 0 12px 30px rgba(0,0,0,0.06);
 }

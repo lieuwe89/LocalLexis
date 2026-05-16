@@ -1,7 +1,8 @@
 export type IconName =
   | 'plus' | 'transcribe' | 'mic' | 'eye' | 'folder' | 'book' | 'gear'
   | 'upload' | 'chev' | 'copy' | 'doc' | 'braces' | 'wave' | 'shield'
-  | 'lock' | 'sparkle' | 'pause' | 'check' | 'search';
+  | 'lock' | 'sparkle' | 'pause' | 'check' | 'search'
+  | 'sun' | 'moon';
 
 export function Icon({ name, size = 16, stroke = 1.5 }: { name: IconName; size?: number; stroke?: number }) {
   const s = { width: size, height: size, fill: 'none', stroke: 'currentColor', strokeWidth: stroke, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -25,6 +26,8 @@ export function Icon({ name, size = 16, stroke = 1.5 }: { name: IconName; size?:
     case 'pause':      return <svg viewBox="0 0 16 16" {...s}><rect x="4.5" y="3.5" width="2.5" height="9" rx="0.5"/><rect x="9" y="3.5" width="2.5" height="9" rx="0.5"/></svg>;
     case 'check':      return <svg viewBox="0 0 16 16" {...s}><path d="M3 8.5l3.2 3.2L13 5"/></svg>;
     case 'search':     return <svg viewBox="0 0 16 16" {...s}><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>;
+    case 'sun':        return <svg viewBox="0 0 16 16" {...s}><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4"/></svg>;
+    case 'moon':       return <svg viewBox="0 0 16 16" {...s}><path d="M13 9.5A5.5 5.5 0 016.5 3a5 5 0 00-.5 9.9A5.5 5.5 0 0013 9.5z"/></svg>;
     default:           return null;
   }
 }

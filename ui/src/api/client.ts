@@ -4,12 +4,12 @@ let cached: string | null = null;
 
 export async function baseUrl(): Promise<string> {
   if (cached) return cached;
-  for (let i = 0; i < 50; i++) {
+  for (let i = 0; i < 900; i++) {
     const u = (await invoke('sidecar_url')) as string | null;
     if (u) { cached = u; return u; }
     await new Promise(r => setTimeout(r, 100));
   }
-  throw new Error('sidecar did not start within 5 seconds');
+  throw new Error('sidecar did not start within 90 seconds');
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {

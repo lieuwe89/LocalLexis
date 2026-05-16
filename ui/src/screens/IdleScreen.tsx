@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon } from '../primitives/Icon';
 import { open } from '@tauri-apps/plugin-dialog';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import type { TranscriptListItem } from '../api/types';
 
 interface Props {
@@ -13,15 +14,20 @@ const ACCEPTED_EXTS = ['mp3', 'm4a', 'wav', 'ogg', 'flac', 'webm'];
 export function IdleScreen({ onTranscribe, recentFiles }: Props) {
   const [drag, setDrag] = useState(false);
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDrag(false);
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      const path = (file as any).path ?? file.name;
-      onTranscribe(path);
-    }
-  };
+  useEffect(() => {
+    const unlistenPromise = getCurrentWebview().onDragDropEvent(event => {
+      if (event.payload.type === 'over' || event.payload.type === 'enter') {
+        setDrag(true);
+      } else if (event.payload.type === 'leave') {
+        setDrag(false);
+      } else if (event.payload.type === 'drop') {
+        setDrag(false);
+        const path = event.payload.paths?.[0];
+        if (path) onTranscribe(path);
+      }
+    });
+    return () => { unlistenPromise.then(fn => fn()).catch(() => {}); };
+  }, [onTranscribe]);
 
   const handleBrowse = async () => {
     const selected = await open({
@@ -45,13 +51,7 @@ export function IdleScreen({ onTranscribe, recentFiles }: Props) {
         </p>
       </div>
 
-      <div
-        className={'drop' + (drag ? ' active' : '')}
-        onDragEnter={(e) => { e.preventDefault(); setDrag(true); }}
-        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={handleDrop}
-      >
+      <div className={'drop' + (drag ? ' active' : '')}>
         <div className="glyph">
           <Icon name="upload" size={40} />
         </div>
