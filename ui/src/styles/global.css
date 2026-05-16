@@ -821,3 +821,18 @@ input, textarea { font-family: inherit; color: inherit; }
 .lib-row.has-error .status { color: var(--warn); }
 .lib-row.has-error .name { color: var(--ink-muted); }
 .lib-row .chev { color: var(--ink-faint); display: flex; }
+
+/* ─────────── Watch folder screen ─────────── */
+.watch { max-width: 920px; margin: 0 auto; padding: 36px 40px 80px; display: flex; flex-direction: column; gap: 22px; }
+.watch-control { display: flex; gap: 14px; align-items: center; }
+.watch-active { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+.watch-active code { color: var(--ink-muted); }
+.watch-recursive { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-muted); font-family: var(--mono); }
+.watch-events { display: flex; flex-direction: column; gap: 4px; }
+.watch-empty { text-align: center; padding: 40px 20px; font-family: var(--serif); font-style: italic; font-size: 16px; color: var(--ink-muted); }
+.watch-events .evt { display: grid; grid-template-columns: 80px 60px 1fr; gap: 12px; padding: 8px 6px; font-family: var(--mono); font-size: 11.5px; border-bottom: 0.5px solid var(--line-faint); }
+.watch-events .evt .ts { color: var(--ink-dim); }
+.watch-events .evt .kind { color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; }
+.watch-events .evt .msg { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.watch-events .evt-error .kind { color: var(--danger); }
+.watch-events .evt-done .kind { color: var(--accent); }

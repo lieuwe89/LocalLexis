@@ -8,6 +8,7 @@ import { ProgressScreen } from './screens/ProgressScreen';
 import { CompleteScreen } from './screens/CompleteScreen';
 import { RecordScreen } from './screens/RecordScreen';
 import { LibraryScreen } from './screens/LibraryScreen';
+import { WatchScreen } from './screens/WatchScreen';
 import { useLibrary } from './stores/library';
 import { useTranscripts } from './stores/transcripts';
 import { startTranscribe, startRecord, stopRecord } from './stores/jobs';
@@ -109,7 +110,10 @@ export default function App() {
           {route === 'library' && (
             <LibraryScreen setRoute={setRoute} setTid={setTid} />
           )}
-          {route !== 'idle' && route !== 'progress' && route !== 'complete' && route !== 'record' && route !== 'library' && (
+          {route === 'watch' && (
+            <WatchScreen />
+          )}
+          {route !== 'idle' && route !== 'progress' && route !== 'complete' && route !== 'record' && route !== 'library' && route !== 'watch' && (
             <pre>{route} (placeholder)</pre>
           )}
         </div>
