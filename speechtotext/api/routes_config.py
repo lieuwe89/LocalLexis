@@ -58,12 +58,12 @@ def patch_config(updates: dict[str, Any]) -> dict:
     def _kv(k: str, v) -> str:
         if isinstance(v, bool):
             return f"{k} = {'true' if v else 'false'}"
-        if isinstance(v, int):
+        if isinstance(v, (int, float)):
             return f"{k} = {v}"
         if isinstance(v, list):
             inside = ", ".join(f'"{x}"' for x in v)
             return f"{k} = [{inside}]"
         return f'{k} = "{v}"'
 
-    path.write_text(_dump_toml(existing))
+    path.write_text(_dump_toml(existing), encoding="utf-8")
     return _public(load_config(config_path=path))

@@ -26,3 +26,13 @@ def test_config_patch_writes_toml(tmp_path: Path, monkeypatch):
     raw = tomllib.loads(cfg_path.read_text())
     assert raw["asr_model"] == "small"
     assert raw["hf_token"] == "hf_xxx"
+
+
+def test_config_patch_float_debounce_round_trips(tmp_path: Path, monkeypatch):
+    cfg_path = tmp_path / "config.toml"
+    monkeypatch.setattr("speechtotext.api.routes_config.DEFAULT_CONFIG_PATH", cfg_path)
+    app = create_app()
+    r = TestClient(app).patch("/config", json={"watch": {"debounce_seconds": 2.5}})
+    assert r.status_code == 200
+    raw = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
+    assert raw["watch"]["debounce_seconds"] == 2.5
