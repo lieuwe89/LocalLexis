@@ -2,12 +2,13 @@
 # Build:   pyinstaller packaging/localscribe-sidecar.spec --clean
 # Output:  dist/localscribe-sidecar (or .exe on Windows)
 # The Tauri shell ships this binary alongside the app.
+from PyInstaller.utils.hooks import collect_data_files
 
 a = Analysis(
     ['../speechtotext/api/__main__.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=collect_data_files('pyannote.audio'),  # includes telemetry/config.yaml and other data files
     hiddenimports=[
         'speechtotext.asr.faster_whisper',
         'speechtotext.diarize.pyannote',
