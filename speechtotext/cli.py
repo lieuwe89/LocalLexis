@@ -227,3 +227,13 @@ def devices(
             d.hint,
         )
     Console().print(table)
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option("--host")] = "127.0.0.1",
+    port: Annotated[int | None, typer.Option("--port")] = None,
+) -> None:
+    """Run the LocalScribe HTTP API."""
+    from speechtotext.api.server import run as _run
+    _run(host=host, port=port)
