@@ -1,0 +1,50 @@
+name: build-app
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  build:
+    strategy: { fail-fast: false, matrix: { os: [ubuntu-latest, macos-14, windows-latest] } }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v3
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: 'pnpm', cache-dependency-path: ui/pnpm-lock.yaml }
+      - name: System deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev ffmpeg
+      - name: Build sidecar
+        run: |
+          pip install -e ".[api,packaging]"
+          pyinstaller packaging/localscribe-sidecar.spec --clean
+          mkdir -p ui/src-tauri/binaries
+      - name: Stage sidecar (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          TRIPLE=$(rustc -vV | sed -n 's/host: //p')
+          cp dist/localscribe-sidecar ui/src-tauri/binaries/localscribe-sidecar-$TRIPLE
+          chmod +x ui/src-tauri/binaries/localscribe-sidecar-$TRIPLE
+      - name: Stage sidecar (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $triple = (rustc -vV | Select-String 'host: ').ToString().Trim() -replace 'host: ',''
+          Copy-Item dist\localscribe-sidecar.exe ui\src-tauri\binaries\localscribe-sidecar-$triple.exe
+      - name: Install JS deps
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
+      - name: Build Tauri app
+        working-directory: ui
+        run: pnpm tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: localscribe-${{ runner.os }}
+          path: |
+            ui/src-tauri/target/release/bundle/**/*
