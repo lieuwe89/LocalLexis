@@ -1,107 +1,249 @@
-# stt — local speech-to-text with speaker labels
+# LocalScribe
 
-Privacy-preserving CLI. Dutch + English. Runs on macOS arm64 and Linux x86_64.
-Swappable CPU / CUDA / MPS backend.
+> Local-first speech-to-text with speaker labels. Cross-platform desktop app + CLI.
+> Nothing leaves your machine — models, audio, and transcripts all live in your filesystem.
 
-## Install (dev)
+LocalScribe transcribes audio into a typeset, speaker-labeled manuscript. It
+runs on your computer using [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+for ASR and [pyannote.audio](https://github.com/pyannote/pyannote-audio) for
+speaker diarization. There is no cloud, no API call, no telemetry. Audio you
+record stays on your disk; transcripts are plain `.txt` and `.json` files next
+to the source audio.
+
+The project ships as two things:
+
+- **`stt`** — a Python CLI for transcribing, recording, watching folders,
+  relabeling speakers, and editing config from a terminal.
+- **LocalScribe** — a Tauri desktop app (macOS / Windows / Linux) that wraps
+  the CLI in a manuscript-themed UI: drop a file, watch it transcribe live,
+  relabel speakers inline, browse the library.
+
+Both are in this repo. Both call the same underlying Python pipeline. The
+desktop app talks to a bundled FastAPI sidecar over `localhost`; the CLI calls
+the pipeline directly.
+
+## Features
+
+- **On-device.** No network calls. The privacy posture is a product
+  invariant — the app surfaces an "On-device" chip and a sidebar live dot to
+  remind you.
+- **Speaker diarization.** Pyannote 4.0 labels who-said-what. Relabel
+  `SPEAKER_00 → Alice` inline; the labels rewrite into the `.json` and `.txt`
+  files.
+- **Dutch + English** out of the box (Whisper auto-detects others too).
+- **Drop, record, watch.** Drag an audio file in, record from a mic, or
+  point at a folder and have new files auto-transcribed.
+- **Swappable backend.** Auto-pick CPU / CUDA / MPS — the
+  `speechtotext.backend.resolve_backend` module figures out what your
+  machine has.
+- **Frozen sidecar schema.** Every transcript becomes a `.json` next to the
+  source audio. No SQLite, no separate index — the filesystem *is* the
+  library. Phase 2 (summarize / RAG Q&A) reads the same files.
+
+## Status
+
+v0.2.0. The CLI (`stt`) is stable. The desktop app is feature-complete for
+v1 — drop file → transcribe → relabel → library / record from mic / watch
+folder / settings editor. Phase 2 (local summarize + RAG search) is reserved
+in the API contract but not yet implemented.
+
+## Install
+
+### Desktop app
+
+Pre-built binaries are produced by
+[`.github/workflows/build-app.yml`](.github/workflows/build-app.yml) for
+macOS, Windows, and Linux on every push to `main`. Once a release is cut,
+download the platform bundle from the
+[Releases](https://github.com/lieuwe89/LocalScribe/releases) page and run it.
+
+> First launch is slow: pyannote downloads ~1 GB of model weights into
+> `~/.cache/speechtotext/models/`. After that it's instant.
+
+You'll need a free [Hugging Face](https://huggingface.co/settings/tokens)
+token to use pyannote. Paste it into Settings on first launch.
+
+### CLI
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+
+# system deps
 brew install ffmpeg          # macOS
 # apt install ffmpeg         # Linux
+# choco install ffmpeg       # Windows
 ```
 
-Pyannote requires a Hugging Face access token (free). Set it once:
+Drop a Hugging Face token into `~/.config/speechtotext/config.toml`:
 
-```bash
-mkdir -p ~/.config/speechtotext
-cat > ~/.config/speechtotext/config.toml <<'EOF'
+```toml
 backend = "auto"
 asr_model = "large-v3"
 hf_token = "hf_..."
-EOF
 ```
 
-## Usage
+## CLI usage
 
 ```bash
-stt doctor                          # check setup
-stt transcribe meeting.mp3          # → meeting.txt + meeting.json
+stt doctor                                # sanity-check setup
+stt transcribe meeting.mp3                # → meeting.txt + meeting.json
 stt transcribe call.wav --lang nl
-stt record --out memo.wav           # mic; Ctrl-C to stop, auto-transcribes
-stt watch ~/Recordings              # daemon: new files → transcribed
+stt record --out memo.wav                 # Ctrl-C to stop; auto-transcribes
+stt watch ~/Recordings                    # daemon: new files → transcribed
 stt relabel meeting.json SPEAKER_00=Alice SPEAKER_01=Bob
+stt devices                               # list audio inputs
+stt serve                                 # run the LocalScribe HTTP API
 ```
 
 ### Recording meetings (system audio)
 
-`stt record` captures the default mic input — not what the other meeting
-participants say through your speakers. To capture both sides:
+`stt record` captures the default microphone, **not** what other participants
+say through your speakers. To capture both sides:
 
-- **macOS:** install BlackHole (https://existential.audio/blackhole/), create
-  an Aggregate Device in Audio MIDI Setup combining your mic + BlackHole,
-  then:
+- **macOS** — install [BlackHole](https://existential.audio/blackhole/),
+  create an Aggregate Device in Audio MIDI Setup combining your mic +
+  BlackHole, then:
   ```bash
-  stt devices                                    # find the aggregate's name
+  stt devices                                       # find the aggregate
   stt record --device "Aggregate (Mic+BlackHole)"
   ```
-- **Linux (PulseAudio):** every output has a `.monitor` source. List with
+- **Linux (PulseAudio)** — every output has a `.monitor` source. List with
   `stt devices` (look for `hint: loopback`).
-- **Simplest:** use the meeting tool's built-in recorder, then
+- **Simplest path** — use the meeting tool's built-in recorder, then
   `stt transcribe meeting.mp4`.
-
-Use `stt devices --json` for scripting.
 
 ## Output format
 
 `<audio>.txt`:
+
 ```
 [00:00:00] Alice: hallo
 [00:00:04] Bob: hoi
 ```
 
-`<audio>.json` follows the frozen schema documented in
-`docs/superpowers/specs/2026-05-14-speech-to-text-cli-design.md`.
+`<audio>.json` is the canonical store. Schema is frozen and documented in
+[the CLI design spec](docs/superpowers/specs/2026-05-14-speech-to-text-cli-design.md).
 
-## Tests
+## Architecture
 
-```bash
-pytest -m "not integration"          # fast suite, no models
-python tests/fixtures/generate_fixtures.py
-pytest -m integration                # downloads whisper-tiny
+Three layers, each with a clear contract:
+
+```
+┌─────────────────────────────────────────────────┐
+│  UI    Tauri shell + React frontend             │
+│        Sidebar, screens, transcript library     │
+└──────────────────────┬──────────────────────────┘
+                       │ REST + Server-Sent Events
+                       │ over localhost:<random>
+┌──────────────────────┴──────────────────────────┐
+│  API   FastAPI server (bundled sidecar)         │
+│        Job orchestration, transcript index      │
+└──────────────────────┬──────────────────────────┘
+                       │ Python imports
+┌──────────────────────┴──────────────────────────┐
+│  ML    speechtotext package (the CLI runtime)   │
+│        Pipeline, ASR, diarize, ingest, writer   │
+└─────────────────────────────────────────────────┘
 ```
 
-## Phase 2
+The Tauri shell spawns the FastAPI sidecar (a PyInstaller-bundled binary)
+at launch, parses a JSON handshake from its stdout to discover the port,
+and kills it on quit. The frontend talks to it over REST + SSE. The ML
+layer is the same code that runs when you invoke `stt` from a terminal.
 
-Summarization and RAG Q&A across transcripts read the same `.json` sidecars.
-See spec for the schema contract.
+Detailed design lives in
+[docs/superpowers/specs/2026-05-15-stt-desktop-ui-design.md](docs/superpowers/specs/2026-05-15-stt-desktop-ui-design.md).
+The visual handoff (mockups, JSX prototypes, design tokens) lives in
+[docs/design_handoff_localscribe/](docs/design_handoff_localscribe/) — open
+[`LocalScribe-standalone.html`](docs/design_handoff_localscribe/LocalScribe-standalone.html)
+in a browser to see the high-fi prototype.
 
-## Desktop app — LocalScribe
+## Build from source
 
-A cross-platform desktop UI lives in `ui/`. It wraps the CLI through a
-bundled FastAPI sidecar, with full feature parity plus a transcript
-library.
+The desktop app is a Tauri 2 project under [`ui/`](ui/). You'll need:
 
-Local dev:
+- Python 3.11+
+- Node 20+ with `pnpm`
+- Rust 1.75+ (`rustup` works fine)
+- `ffmpeg` on `PATH`
 
-    # 1. Build the sidecar
-    pip install -e ".[api,packaging]"
-    pyinstaller packaging/localscribe-sidecar.spec --clean
-    mkdir -p ui/src-tauri/binaries
-    cp dist/localscribe-sidecar ui/src-tauri/binaries/localscribe-sidecar-$(rustc -vV | sed -n 's/host: //p')
+```bash
+# 1. Build the sidecar binary
+pip install -e ".[api,packaging]"
+pyinstaller packaging/localscribe-sidecar.spec --clean
+mkdir -p ui/src-tauri/binaries
+cp dist/localscribe-sidecar ui/src-tauri/binaries/localscribe-sidecar-$(rustc -vV | sed -n 's/host: //p')
 
-    # 2. Run the app in dev mode
-    cd ui && pnpm install && pnpm tauri dev
+# 2. Run in dev mode
+cd ui
+pnpm install
+pnpm tauri dev
+```
 
-Release builds are produced by `.github/workflows/build-app.yml` for
-macOS, Windows, and Linux.
+Release builds: `pnpm tauri build` from `ui/`. Outputs land in
+`ui/src-tauri/target/release/bundle/`.
 
-Design references live in `docs/design_handoff_localscribe/`. Run
-`open docs/design_handoff_localscribe/LocalScribe-standalone.html` to
-see the high-fi prototype.
+## Project layout
 
-The HTTP API surface (used by the Tauri shell and available
-standalone via `stt serve`) is specified in
-`docs/superpowers/specs/2026-05-15-stt-desktop-ui-design.md`.
+```
+SpeechToText/
+├── speechtotext/                 # Python package
+│   ├── api/                      # FastAPI sidecar
+│   ├── asr/, diarize/, ingest/   # ML adapters
+│   ├── cli.py                    # `stt` command
+│   ├── pipeline.py               # orchestrator
+│   └── writer.py, relabel.py
+├── ui/                           # Tauri + Vite + React frontend
+│   ├── src/                      # screens, stores, primitives, chrome
+│   └── src-tauri/                # Rust shell + sidecar lifecycle
+├── packaging/                    # PyInstaller spec
+├── tests/                        # pytest suite (108 fast tests + integration)
+├── docs/
+│   ├── design_handoff_localscribe/  # visual handoff (HTML prototype, JSX, CSS)
+│   └── superpowers/specs/plans/     # design specs and implementation plans
+└── .github/workflows/            # CI for sidecar + full app
+```
+
+## Development
+
+```bash
+# Backend
+pytest -m "not integration"        # fast Python suite (~98 tests)
+pytest -m integration              # end-to-end with whisper-tiny (slow)
+
+# Frontend
+cd ui
+pnpm test                          # vitest
+pnpm tsc --noEmit                  # type-check
+
+# Tauri smoke test (requires the sidecar binary in place)
+cargo test --manifest-path ui/src-tauri/Cargo.toml --release
+```
+
+## Roadmap
+
+- [ ] Phase 2: local summarization (per-transcript summary endpoint).
+- [ ] Phase 2: RAG Q&A across the transcript library (local embedding model).
+- [ ] Live streaming transcription from the mic (per-chunk ASR).
+- [ ] Per-job cancel button in the Tauri UI.
+- [ ] Plain-chrome window mode (currently macOS-style traffic-light header
+      is the only option).
+
+## License
+
+Not yet licensed. Until a `LICENSE` file lands, treat this as "all rights
+reserved" — the source is published for transparency but redistribution
+isn't granted. A permissive license (likely MIT or Apache-2.0) is intended
+for a future release.
+
+## Acknowledgements
+
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — CTranslate2-
+  based Whisper inference.
+- [pyannote.audio](https://github.com/pyannote/pyannote-audio) — speaker
+  diarization toolkit.
+- [Tauri](https://tauri.app/) — Rust-powered cross-platform desktop shell.
+- Newsreader, Geist, Geist Mono — Google Fonts, the manuscript metaphor's
+  type stack.
