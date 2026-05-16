@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
+import { audioDir, join } from '@tauri-apps/api/path';
 import './styles/global.css';
 import { Window } from './chrome/Window';
 import { Sidebar } from './chrome/Sidebar';
@@ -38,11 +39,6 @@ export default function App() {
     const id = setInterval(() => useRecording.getState().tick(0.1), 100);
     return () => clearInterval(id);
   }, [recording.active, recording.paused]);
-
-  const recOut = useMemo(() => {
-    const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
-    return `recording-${ts}.wav`;
-  }, [recording.jobId]);
 
   return (
     <Window screenLabel={route}>
@@ -85,23 +81,27 @@ export default function App() {
               active={recording.active}
               paused={recording.paused}
               elapsed={recording.elapsed}
-              outputPath={recOut}
+              outputPath={currentAudioPath}
               selectedDevice={recording.deviceId}
               onSelectDevice={(id) => useRecording.getState().setDevice(id)}
               onStart={async () => {
+                const dir = await audioDir();
+                const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+                const filename = `recording-${ts}.wav`;
+                const fullPath = await join(dir, filename);
                 useRecording.getState().reset();
-                const id = await startRecord(recOut, recording.deviceId ?? undefined);
+                const id = await startRecord(fullPath, recording.deviceId ?? undefined);
                 useRecording.getState().setJob(id);
                 useRecording.getState().setActive(true);
+                setCurrentAudioPath(fullPath);
               }}
               onStop={async () => {
                 const jobId = useRecording.getState().jobId;
                 if (!jobId) return;
                 await stopRecord(jobId);
                 useRecording.getState().setActive(false);
-                const transcribeJobId = await startTranscribe(recOut);
+                const transcribeJobId = await startTranscribe(currentAudioPath);
                 setCurrentJobId(transcribeJobId);
-                setCurrentAudioPath(recOut);
                 setRoute('progress');
               }}
               onPause={() => useRecording.getState().setPaused(!recording.paused)}
