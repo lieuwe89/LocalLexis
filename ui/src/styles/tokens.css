@@ -1,0 +1,39 @@
+:root {
+  /* Palette — warm ink-on-paper inverted */
+  --bg: #0c0c0d;
+  --bg-sidebar: #08080a;
+  --bg-elev: #131315;
+  --bg-elev-2: #1a1a1d;
+  --bg-hover: #18181b;
+  --bg-active: #1f1f22;
+
+  --line: #1f1f22;
+  --line-strong: #2a2a2e;
+  --line-faint: #161618;
+
+  --ink: #ece9e1;          /* warm off-white, the manuscript ink */
+  --ink-muted: #a8a59b;
+  --ink-dim: #65635c;
+  --ink-faint: #3a3935;
+
+  --accent: #6fd99a;         /* sage/quill green — live/active */
+  --accent-deep: #2faa66;
+  --accent-faint: rgba(111, 217, 154, 0.10);
+  --accent-line: rgba(111, 217, 154, 0.35);
+
+  --warn: #d97757;
+  --danger: #e0584b;
+
+  --serif: 'Newsreader', ui-serif, 'Iowan Old Style', Georgia, serif;
+  --sans:  'Geist', ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+  --mono:  'Geist Mono', ui-monospace, 'SF Mono', 'Menlo', monospace;
+
+  --rad: 10px;
+  --rad-sm: 6px;
+
+  /* Stage backdrop */
+  --stage-bg: #050506;
+  --stage-glow: rgba(111, 217, 154, 0.025);
+  --window-ring: rgba(255,255,255,0.06);
+  --window-shadow: 0 30px 80px rgba(0,0,0,0.5), 0 12px 30px rgba(0,0,0,0.4);
+}

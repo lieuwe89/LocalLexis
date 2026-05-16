@@ -77,3 +77,31 @@ pytest -m integration                # downloads whisper-tiny
 
 Summarization and RAG Q&A across transcripts read the same `.json` sidecars.
 See spec for the schema contract.
+
+## Desktop app — LocalScribe
+
+A cross-platform desktop UI lives in `ui/`. It wraps the CLI through a
+bundled FastAPI sidecar, with full feature parity plus a transcript
+library.
+
+Local dev:
+
+    # 1. Build the sidecar
+    pip install -e ".[api,packaging]"
+    pyinstaller packaging/localscribe-sidecar.spec --clean
+    mkdir -p ui/src-tauri/binaries
+    cp dist/localscribe-sidecar ui/src-tauri/binaries/localscribe-sidecar-$(rustc -vV | sed -n 's/host: //p')
+
+    # 2. Run the app in dev mode
+    cd ui && pnpm install && pnpm tauri dev
+
+Release builds are produced by `.github/workflows/build-app.yml` for
+macOS, Windows, and Linux.
+
+Design references live in `docs/design_handoff_localscribe/`. Run
+`open docs/design_handoff_localscribe/LocalScribe-standalone.html` to
+see the high-fi prototype.
+
+The HTTP API surface (used by the Tauri shell and available
+standalone via `stt serve`) is specified in
+`docs/superpowers/specs/2026-05-15-stt-desktop-ui-design.md`.

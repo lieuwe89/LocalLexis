@@ -1,0 +1,32 @@
+name: build-sidecar
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install -y ffmpeg
+      - run: pip install -e ".[api,packaging,dev]"
+      - run: pytest -m "not integration"
+      - run: pyinstaller packaging/localscribe-sidecar.spec --clean
+      - uses: actions/upload-artifact@v4
+        with:
+          name: localscribe-sidecar-${{ runner.os }}
+          path: dist/localscribe-sidecar*
