@@ -21,7 +21,7 @@ export function Sidebar({ route, setRoute, setCurrentTranscriptId, jobActive }: 
   setCurrentTranscriptId: (id: string | null) => void;
   jobActive?: boolean;
 }) {
-  const items = useLibrary(s => s.items);
+  const items = useLibrary(s => s.all);
   const recent = useMemo(() => items.slice(0, 5), [items]);
   const recording = useRecording(s => s.active);
   const loadTranscript = useTranscripts(s => s.load);

@@ -28,7 +28,7 @@ export default function App() {
   const [devices, setDevices] = useState<AudioDeviceDto[]>([]);
   const refreshLibrary = useLibrary(s => s.refresh);
   const loadTranscript = useTranscripts(s => s.load);
-  const libraryItems = useLibrary(s => s.items);
+  const libraryItems = useLibrary(s => s.all);
   const recentItems = useMemo(() => libraryItems.slice(0, 3), [libraryItems]);
   const currentDoc = useTranscripts(s => (tid ? s.byId[tid] : undefined));
   const relabel = useTranscripts(s => s.relabel);

@@ -28,6 +28,8 @@ export interface TranscriptListItem {
   created_at?: string;
   models?: Record<string, string>;
   error?: string;
+  /** HTML snippet from FTS5 (with <mark> tags). Only set on search results. */
+  snippet?: string;
 }
 
 export interface TranscriptSegment {

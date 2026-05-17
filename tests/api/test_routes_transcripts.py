@@ -10,7 +10,7 @@ from speechtotext.api.app import create_app
 
 @pytest.fixture
 def app_with_lib(tmp_path):
-    app = create_app()
+    app = create_app(library_db_path=tmp_path / "library.db")
     app.state.library_dirs.add(tmp_path)
     sample = {
         "version": 1,
