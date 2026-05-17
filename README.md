@@ -36,16 +36,17 @@ the pipeline directly.
 - **Swappable backend.** Auto-pick CPU / CUDA / MPS — the
   `speechtotext.backend.resolve_backend` module figures out what your
   machine has.
-- **Frozen sidecar schema.** Every transcript becomes a `.json` next to the
-  source audio. No SQLite, no separate index — the filesystem *is* the
-  library. Phase 2 (summarize / RAG Q&A) reads the same files.
+- **Searchable library.** SQLite + FTS5 index keeps every transcript
+  searchable by content, filename, and speaker. The `.json` files on disk
+  remain canonical — the index is rebuildable from them at any time.
 
 ## Status
 
-v0.2.0. The CLI (`stt`) is stable. The desktop app is feature-complete for
-v1 — drop file → transcribe → relabel → library / record from mic / watch
-folder / settings editor. Phase 2 (local summarize + RAG search) is reserved
-in the API contract but not yet implemented.
+v0.6.0. The CLI (`stt`) is stable. The desktop app covers the full core
+workflow — drop file → transcribe → relabel → library / record from mic /
+watch folder / settings editor. The transcript library is backed by SQLite +
+FTS5 with ranked full-text search. Phase 2 (local RAG search via embeddings)
+has its schema in place; the chunker and embedder are next.
 
 ## Install
 
@@ -57,11 +58,12 @@ macOS, Windows, and Linux on every push to `main`. Once a release is cut,
 download the platform bundle from the
 [Releases](https://github.com/lieuwe89/LocalScribe/releases) page and run it.
 
-> First launch is slow: pyannote downloads ~1 GB of model weights into
-> `~/.cache/speechtotext/models/`. After that it's instant.
+> The `base.en` Whisper model (~140 MB) is bundled — transcription works
+> immediately. Pyannote speaker diarization requires a one-time download
+> (~30 MB) on first use; you'll need a free Hugging Face token for that.
 
-You'll need a free [Hugging Face](https://huggingface.co/settings/tokens)
-token to use pyannote. Paste it into Settings on first launch.
+Paste your [Hugging Face](https://huggingface.co/settings/tokens) token into
+Settings on first launch to enable speaker diarization.
 
 ### CLI
 
@@ -210,7 +212,7 @@ SpeechToText/
 
 ```bash
 # Backend
-pytest -m "not integration"        # fast Python suite (~98 tests)
+pytest -m "not integration"        # fast Python suite (~113 tests)
 pytest -m integration              # end-to-end with whisper-tiny (slow)
 
 # Frontend
@@ -224,12 +226,12 @@ cargo test --manifest-path ui/src-tauri/Cargo.toml --release
 
 ## Roadmap
 
-- [ ] Phase 2: local summarization (per-transcript summary endpoint).
-- [ ] Phase 2: RAG Q&A across the transcript library (local embedding model).
+- [ ] RAG Phase 1: chunker — split transcripts into ~300-token windows, store in DB.
+- [ ] RAG Phase 2: embedder — `all-MiniLM-L6-v2` or `bge-small-en-v1.5`, triggered after transcribe.
+- [ ] RAG Phase 3: vector search — `sqlite-vec` + hybrid BM25/cosine via RRF.
+- [ ] RAG Phase 4: summarization — local LLM vs cloud API decision still open.
 - [ ] Live streaming transcription from the mic (per-chunk ASR).
-- [ ] Per-job cancel button in the Tauri UI.
-- [ ] Plain-chrome window mode (currently macOS-style traffic-light header
-      is the only option).
+- [ ] Plain-chrome window mode.
 
 ## License
 
