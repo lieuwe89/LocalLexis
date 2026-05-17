@@ -102,7 +102,7 @@ export function ProgressScreen({ jobId, audioPath, onComplete, onCancelled }: Pr
           const cls = i < currentIdx ? 'done' : i === currentIdx ? 'active' : '';
           return (
             <span key={s} className={'stage-chip ' + cls}>
-              {STAGE_LABELS[s]}{i === currentIdx ? ` ${Math.round(job.percent * 100)}%` : ''}
+              {STAGE_LABELS[s]}
             </span>
           );
         })}
