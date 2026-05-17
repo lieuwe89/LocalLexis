@@ -451,6 +451,22 @@ input, textarea { font-family: inherit; color: inherit; }
 .opt-menu-item.selected { color: var(--accent); }
 .opt-menu-item .check { display: flex; color: var(--accent); }
 
+/* settings: model picker + status pill */
+.settings .model-field { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.settings .model-field select { flex: 1; min-width: 220px; }
+.model-status {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.04em;
+  padding: 3px 8px; border-radius: 999px;
+  border: 0.5px solid var(--line-strong);
+  white-space: nowrap;
+}
+.model-status-ok {
+  color: var(--accent); background: var(--accent-faint); border-color: var(--accent-line);
+}
+.model-status-warn {
+  color: var(--warn); background: rgba(217, 119, 87, 0.08); border-color: var(--warn);
+}
+
 /* settings info popovers */
 .settings .field .lbl-row {
   display: flex; align-items: center; gap: 6px;

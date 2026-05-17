@@ -9,8 +9,10 @@ from speechtotext.api.jobs import JobRegistry
 from speechtotext.api.routes_config import router as config_router
 from speechtotext.api.routes_devices import router as devices_router
 from speechtotext.api.routes_jobs import router as jobs_router
+from speechtotext.api.routes_models import router as models_router
 from speechtotext.api.routes_transcripts import router as transcripts_router
 from speechtotext.api.routes_watch import router as watch_router
+from speechtotext.api.warmup import warm_microphone_in_background
 from speechtotext.api.watcher import WatchController
 from speechtotext.config import load_config
 
@@ -40,11 +42,19 @@ def create_app() -> FastAPI:
     app.include_router(devices_router)
     app.include_router(config_router)
     app.include_router(jobs_router)
+    app.include_router(models_router)
     app.include_router(transcripts_router)
     app.include_router(watch_router)
 
     @app.get("/health")
     def health() -> dict:
         return {"ok": True}
+
+    @app.on_event("startup")
+    def _on_startup() -> None:
+        # Trigger the macOS mic permission prompt at app launch instead of
+        # when the user clicks Record, so the first recording isn't missing
+        # its opening seconds while the user is dismissing a dialog.
+        warm_microphone_in_background()
 
     return app

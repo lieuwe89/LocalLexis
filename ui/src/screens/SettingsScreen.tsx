@@ -1,8 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 import { useConfig } from '../stores/config';
+import { api } from '../api/client';
 import type { ConfigDto } from '../api/types';
 
 type Draft = Partial<ConfigDto> & { hf_token?: string };
+
+interface ModelStatus {
+  name: string;
+  status: 'bundled' | 'cached' | 'not_downloaded';
+  size_mb: number;
+}
+
+function formatSize(mb: number): string {
+  return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${mb} MB`;
+}
+
+function statusLabel(s: ModelStatus): string {
+  const base = `${s.name} · ${formatSize(s.size_mb)}`;
+  switch (s.status) {
+    case 'bundled':         return `${base} · ready (bundled)`;
+    case 'cached':          return `${base} · ready (downloaded)`;
+    case 'not_downloaded':  return `${base} · downloads on first use`;
+  }
+}
 
 const INFO: Record<string, string> = {
   backend:
@@ -46,8 +66,12 @@ export function SettingsScreen() {
   const [draft, setDraft] = useState<Draft>({});
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [models, setModels] = useState<ModelStatus[] | null>(null);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    api<ModelStatus[]>('/models/whisper').then(setModels).catch(() => setModels([]));
+  }, []);
   if (!cfg) return <div className="settings"><p style={{ color: 'var(--ink-muted)' }}>Loading…</p></div>;
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => {
@@ -77,17 +101,23 @@ export function SettingsScreen() {
         </select>
       </Field>
       <Field label="ASR model" info={INFO.asr_model}>
-        <select value={draft.asr_model ?? cfg.asr_model} onChange={e => set('asr_model', e.target.value)}>
-          <option value="tiny">tiny (~75 MB)</option>
-          <option value="tiny.en">tiny.en (~75 MB, English-only)</option>
-          <option value="base">base (~140 MB)</option>
-          <option value="base.en">base.en (~140 MB, English-only, bundled)</option>
-          <option value="small">small (~470 MB)</option>
-          <option value="small.en">small.en (~470 MB, English-only)</option>
-          <option value="medium">medium (~1.5 GB)</option>
-          <option value="medium.en">medium.en (~1.5 GB, English-only)</option>
-          <option value="large-v3">large-v3 (~3 GB, best quality)</option>
-        </select>
+        <div className="model-field">
+          <select value={draft.asr_model ?? cfg.asr_model} onChange={e => set('asr_model', e.target.value)}>
+            {(models ?? []).map(m => (
+              <option key={m.name} value={m.name}>{statusLabel(m)}</option>
+            ))}
+          </select>
+          {(() => {
+            const selected = (draft.asr_model ?? cfg.asr_model);
+            const s = models?.find(m => m.name === selected);
+            if (!s) return null;
+            const cls = s.status === 'not_downloaded' ? 'warn' : 'ok';
+            const label = s.status === 'bundled' ? 'Bundled with app'
+              : s.status === 'cached' ? 'Downloaded'
+              : `Not yet downloaded (~${formatSize(s.size_mb)})`;
+            return <span className={`model-status model-status-${cls}`}>{label}</span>;
+          })()}
+        </div>
       </Field>
       <Field label="Hugging Face token" info={INFO.hf_token}>
         <input
