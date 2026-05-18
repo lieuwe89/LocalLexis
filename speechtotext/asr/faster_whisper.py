@@ -3,10 +3,7 @@ from __future__ import annotations
 import os
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Literal
-
-if TYPE_CHECKING:
-    from faster_whisper import WhisperModel
+from typing import Callable, Literal
 
 from speechtotext.models import Segment
 

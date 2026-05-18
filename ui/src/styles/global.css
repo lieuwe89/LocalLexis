@@ -988,7 +988,7 @@ input, textarea { font-family: inherit; color: inherit; }
   background: #f59e0b;
   animation: backend-pulse 1.2s ease-in-out infinite;
 }
-.backend-status[data-status="ready"] .backend-status__dot { background: #22c55e; }
+.backend-status[data-status="ready"] .backend-status__dot { background: var(--accent, #22c55e); }
 .backend-status[data-status="failed"] .backend-status__dot { background: var(--danger, #ef4444); }
 @keyframes backend-pulse {
   0%, 100% { opacity: 0.5; }
