@@ -14,7 +14,7 @@ export function BackendStatus() {
       className="chip backend-status"
       data-status={status}
       data-testid="backend-status"
-      title={status === 'failed' ? (error ?? 'Engine offline') : `Engine ${LABEL[status]}`}
+      title={status === 'failed' ? `Engine offline${error ? ` — ${error}` : ''}` : `Engine ${LABEL[status]}`}
     >
       <span className="backend-status__dot" aria-hidden="true" />
       {LABEL[status]}

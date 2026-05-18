@@ -27,7 +27,6 @@ describe('BackendStatus', () => {
   });
 
   it('exposes status via data attribute for styling', () => {
-    useBackend.setState({ status: 'starting' });
     render(<BackendStatus />);
     expect(screen.getByTestId('backend-status').getAttribute('data-status')).toBe('starting');
   });
