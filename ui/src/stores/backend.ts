@@ -7,14 +7,15 @@ interface State {
   status: BackendStatus;
   elapsedMs: number;
   error: string | null;
-  /** True once start() has been called; reset alongside status via setState in tests. */
-  _started: boolean;
   start: () => void;
+  /** Test-only: resets closure state so a subsequent start() runs from scratch. */
+  _resetForTests: () => void;
 }
 
 const TICK_MS = 250;
 
 export const useBackend = create<State>((set, get) => {
+  let started = false;
   let startTs = 0;
   let tickHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -29,12 +30,10 @@ export const useBackend = create<State>((set, get) => {
     status: 'starting',
     elapsedMs: 0,
     error: null,
-    _started: false,
     start: () => {
-      if (get()._started) return;
-      set({ _started: true });
+      if (started) return;
+      started = true;
       startTs = Date.now();
-      // Update elapsedMs every TICK_MS while still starting
       tickHandle = setInterval(() => {
         if (get().status === 'starting') {
           set({ elapsedMs: Date.now() - startTs });
@@ -42,16 +41,20 @@ export const useBackend = create<State>((set, get) => {
       }, TICK_MS);
 
       baseUrl()
-        .then(async (url) => {
-          const r = await fetch(url + '/health');
-          if (!r.ok) throw new Error(`/health ${r.status}`);
+        .then(() => {
           set({ status: 'ready', elapsedMs: Date.now() - startTs });
           stopTicking();
         })
         .catch((e) => {
-          set({ status: 'failed', error: String(e), elapsedMs: Date.now() - startTs });
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ status: 'failed', error: msg, elapsedMs: Date.now() - startTs });
           stopTicking();
         });
+    },
+    _resetForTests: () => {
+      stopTicking();
+      started = false;
+      startTs = 0;
     },
   };
 });
