@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
-
-if TYPE_CHECKING:
-    import torch
-    from pyannote.audio import Pipeline
+from typing import Literal
 
 from speechtotext.models import SpeakerTurn
 
@@ -22,6 +18,7 @@ class PyannoteDiarizer:
         import torch  # lazy: deferred from module load to first instantiation
         from pyannote.audio import Pipeline  # lazy: deferred from module load to first instantiation
 
+        self._torch = torch
         if not hf_token:
             raise ValueError("pyannote requires a Hugging Face access token")
         # pyannote 4.x renamed `use_auth_token` -> `token`. Pass both names so
@@ -35,7 +32,6 @@ class PyannoteDiarizer:
 
     def diarize(self, wav_path: Path, num_speakers: int | None) -> list[SpeakerTurn]:
         import soundfile as sf  # lazy: deferred from module load to first diarize call
-        import torch  # lazy: deferred from module load to first diarize call
 
         kwargs: dict = {}
         if num_speakers is not None:
@@ -45,7 +41,7 @@ class PyannoteDiarizer:
         # frozen bundle. pyannote accepts {"waveform": Tensor, "sample_rate": int}.
         data, sample_rate = sf.read(str(wav_path), always_2d=True, dtype="float32")
         # soundfile returns (time, channel); pyannote wants (channel, time).
-        waveform = torch.from_numpy(data.T)
+        waveform = self._torch.from_numpy(data.T)
         result = self._pipeline(
             {"waveform": waveform, "sample_rate": sample_rate}, **kwargs
         )
