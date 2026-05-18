@@ -10,7 +10,7 @@ from speechtotext.models import SpeakerTurn
 def _patch_sf_read():
     """soundfile.read mock that returns silent stereo at 16 kHz."""
     return patch(
-        "speechtotext.diarize.pyannote.sf.read",
+        "soundfile.read",
         return_value=(np.zeros((1600, 1), dtype=np.float32), 16000),
     )
 
@@ -41,7 +41,7 @@ def test_diarize_returns_speaker_turns(tmp_path: Path):
     )
 
     with patch(
-        "speechtotext.diarize.pyannote.Pipeline.from_pretrained", return_value=pipeline
+        "pyannote.audio.Pipeline.from_pretrained", return_value=pipeline
     ), _patch_sf_read():
         diarizer = PyannoteDiarizer(hf_token="hf_test", backend="cpu")
         turns = diarizer.diarize(wav, num_speakers=None)
@@ -62,7 +62,7 @@ def test_diarize_passes_num_speakers_hint(tmp_path: Path):
     pipeline.return_value = _fake_annotation([])
 
     with patch(
-        "speechtotext.diarize.pyannote.Pipeline.from_pretrained", return_value=pipeline
+        "pyannote.audio.Pipeline.from_pretrained", return_value=pipeline
     ), _patch_sf_read():
         diarizer = PyannoteDiarizer(hf_token="hf_test", backend="cpu")
         diarizer.diarize(wav, num_speakers=3)
@@ -74,11 +74,10 @@ def test_backend_sets_torch_device():
     pipeline = MagicMock()
     with (
         patch(
-            "speechtotext.diarize.pyannote.Pipeline.from_pretrained", return_value=pipeline
+            "pyannote.audio.Pipeline.from_pretrained", return_value=pipeline
         ),
-        patch("speechtotext.diarize.pyannote.torch") as torch_mod,
+        patch("torch.device", return_value="fake-device") as torch_device_mock,
     ):
-        torch_mod.device.return_value = "fake-device"
         PyannoteDiarizer(hf_token="hf_test", backend="cuda")
-        torch_mod.device.assert_called_with("cuda")
+        torch_device_mock.assert_called_with("cuda")
         pipeline.to.assert_called_with("fake-device")

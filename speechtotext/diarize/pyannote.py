@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-import soundfile as sf
-import torch
-from pyannote.audio import Pipeline
+if TYPE_CHECKING:
+    import torch
+    from pyannote.audio import Pipeline
 
 from speechtotext.models import SpeakerTurn
 
@@ -19,6 +19,9 @@ class PyannoteDiarizer:
         backend: Literal["cpu", "cuda", "mps"] = "cpu",
         model_id: str = _MODEL_ID,
     ) -> None:
+        import torch  # lazy: deferred from module load to first instantiation
+        from pyannote.audio import Pipeline  # lazy: deferred from module load to first instantiation
+
         if not hf_token:
             raise ValueError("pyannote requires a Hugging Face access token")
         # pyannote 4.x renamed `use_auth_token` -> `token`. Pass both names so
@@ -31,6 +34,9 @@ class PyannoteDiarizer:
         self._pipeline.to(device)
 
     def diarize(self, wav_path: Path, num_speakers: int | None) -> list[SpeakerTurn]:
+        import soundfile as sf  # lazy: deferred from module load to first diarize call
+        import torch  # lazy: deferred from module load to first diarize call
+
         kwargs: dict = {}
         if num_speakers is not None:
             kwargs["num_speakers"] = num_speakers
