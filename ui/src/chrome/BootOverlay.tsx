@@ -10,16 +10,14 @@ export function BootOverlay() {
 
   if (status === 'ready') return null;
 
-  const showExtended = elapsedMs >= EXTENDED_THRESHOLD_MS;
-
   return (
-    <div className="boot-overlay" data-testid="boot-overlay" role="status" aria-live="polite">
+    <div className="boot-overlay" data-testid="boot-overlay" role="status" aria-atomic="true">
       <div className="boot-overlay__logo">LocalLexis</div>
       {status === 'starting' && <div className="boot-overlay__spinner" aria-hidden="true" />}
       <div className="boot-overlay__phase">
         {status === 'starting' ? 'Starting audio engine…' : 'Engine failed to start'}
       </div>
-      {status === 'starting' && showExtended && (
+      {status === 'starting' && elapsedMs >= EXTENDED_THRESHOLD_MS && (
         <div className="boot-overlay__extended">
           Taking longer than usual. On first launch macOS verifies the app — this usually
           finishes within 30 seconds.
