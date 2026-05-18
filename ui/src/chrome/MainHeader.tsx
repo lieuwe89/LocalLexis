@@ -1,6 +1,7 @@
 import { Icon } from '../primitives/Icon';
 import { useTheme } from '../stores/theme';
 import type { Route } from '../types/route';
+import { BackendStatus } from './BackendStatus';
 
 const HEADERS: Record<Route, { crumb: string; title: string }> = {
   idle:     { crumb: 'New transcription', title: 'Transcribe' },
@@ -35,6 +36,7 @@ export function MainHeader({ route, doneLabel, isLive }: { route: Route; doneLab
       >
         <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={13} stroke={1.6} />
       </button>
+      <BackendStatus />
       <span className="chip"><Icon name="lock" size={11} stroke={1.5} /> On-device</span>
     </div>
   );

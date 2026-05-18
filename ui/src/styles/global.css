@@ -977,3 +977,20 @@ input, textarea { font-family: inherit; color: inherit; }
 .settings .field input:focus, .settings .field select:focus { border-color: var(--accent-line); background: var(--bg-elev-2); }
 .settings .field input[type="checkbox"] { width: 16px; height: 16px; justify-self: start; }
 .settings-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+
+/* ─────────── Backend status pill ─────────── */
+.backend-status { display: inline-flex; align-items: center; gap: 6px; }
+.backend-status__dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ink-muted, #888);
+}
+.backend-status[data-status="starting"] .backend-status__dot {
+  background: #f59e0b;
+  animation: backend-pulse 1.2s ease-in-out infinite;
+}
+.backend-status[data-status="ready"] .backend-status__dot { background: #22c55e; }
+.backend-status[data-status="failed"] .backend-status__dot { background: #ef4444; }
+@keyframes backend-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
