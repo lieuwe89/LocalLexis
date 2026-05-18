@@ -20,8 +20,8 @@ function Sidebar({ route, setRoute, isRecording, recordElapsed }) {
   return (
     <div className="sidebar">
       <div className="brand">
-        <div className="wordmark">LocalScribe</div>
-        <div className="pron">/ˈloʊkəlˌskraɪb/ &nbsp;·&nbsp; v1.0</div>
+        <div className="wordmark">LocalLexis</div>
+        <div className="pron">/ˈloʊkəlˌlɛksɪs/ &nbsp;·&nbsp; v1.0</div>
       </div>
 
       <button className="new-btn" onClick={() => setRoute('idle')}>

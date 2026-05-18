@@ -31,7 +31,7 @@ The app is a single window split into a fixed-width left sidebar (`232px`) and a
 
 - **Brand block** (padding `4px 18px 16px`):
   - Wordmark "LocalLexis" — Newsreader serif, 22px / 500, color `--ink` (`#ece9e1`), letter-spacing `-0.01em`.
-  - Pronunciation guide "/ˈloʊkəlˌskraɪb/ · v1.0" — Newsreader italic, 10.5px, color `--ink-dim`.
+  - Pronunciation guide "/ˈloʊkəlˌlɛksɪs/ · v1.0" — Newsreader italic, 10.5px, color `--ink-dim`.
 - **"+ New transcription" button** (margin `0 14px 14px`, height 34px):
   - Inverted: bg `--ink` (off-white `#ece9e1`), text `--bg` (near-black `#0c0c0d`).
   - Leading `+` icon (13px), trailing keyboard hint `⌘N` in mono.
@@ -65,15 +65,15 @@ The default landing. Max-width `760px`, centered, padding `56px 40px 60px`, vert
 - **Options row**: 3-column grid, gap 12px. Each "option" card: radius 10px, bg `--bg-elev`, border `--line`, padding `14px 14px 12px`. Inside: uppercase mono label ("LANGUAGE", "SPEAKERS", "BACKEND") followed by the current value and a chevron. Hover lifts to `--bg-hover` + `--line-strong`.
   - Defaults: `Auto-detect`, `Auto`, `faster-whisper`. The dropdowns aren't built — wire to the API contract (`GET /devices`, `GET /config`).
 - **Recent files list**: a section with a `RECENT FILES` mono label, then 3 rows. Each row is a 5-col grid (`22px 1fr auto auto auto`, gap 14px): file icon, monospaced filename, duration, speaker count, relative date — separated by 0.5px row dividers (`--line-faint`).
-- **Etymology card**: a deliberate flourish at the bottom. Bg `--bg-elev`, border `--line`, radius 12px. A Newsreader italic head defining "scribe / skraɪb · noun" followed by a brief etymology. This is the only piece of "marketing copy" in the UI — it carries the metaphor.
+- **Etymology card**: a deliberate flourish at the bottom. Bg `--bg-elev`, border `--line`, radius 12px. A Newsreader italic head defining "lexis / ˈlɛksɪs · noun" followed by a brief etymology (Greek λέξις, "word, speech"). This is the only piece of "marketing copy" in the UI — it carries the local-first metaphor.
 
 ### 2. Record
 
 Full-bleed centered layout, padding `40px 40px 32px`, gap 24px, items center-aligned.
 
 - **Device bar** at top: a pill (height ~36px, padding `6px 12px 6px 14px`, radius 999px, bg `--bg-elev`, border `--line`). Contents: a "INPUT" label (mono 10px uppercase), a borderless `<select>` for input device (MacBook Pro Microphone / AirPods Pro / Shure SM7B), a separator dot, "48 kHz · mono". Whole bar is `white-space: nowrap`. Wire to `GET /devices`.
-- **Scribe canvas** (the seismograph): the hero piece. Max-width 880px, `flex: 1`, min-height 280px, radius 14px, border `--line`, bg = `--bg-elev` plus a soft radial accent-green glow at center. Inside:
-  - A custom SVG waveform renderer (`<Waveform>` in `screens.jsx`). 140 vertical bars across the canvas, deterministic-noise heights modulated by an envelope that ramps from quiet on the left ("past") to tall on the right ("now"). Each frame, `requestAnimationFrame` increments a `phase` value so the bars wobble — the visual metaphor of audio being inscribed onto paper, traveling right to left. The 3 right-most bars are slightly thicker + brighter (the "current moment"). A dashed vertical playhead line sits 34px from the right edge.
+- **Lexis canvas** (the seismograph): the hero piece. Max-width 880px, `flex: 1`, min-height 280px, radius 14px, border `--line`, bg = `--bg-elev` plus a soft radial accent-green glow at center. Inside:
+  - A custom SVG waveform renderer (`<Waveform>` in `screens.jsx`). 140 vertical bars across the canvas, deterministic-noise heights modulated by an envelope that ramps from quiet on the left ("past") to tall on the right ("now"). Each frame, `requestAnimationFrame` increments a `phase` value so the bars wobble — the visual metaphor of audio being captured to disk, traveling right to left. The 3 right-most bars are slightly thicker + brighter (the "current moment"). A dashed vertical playhead line sits 34px from the right edge.
   - All strokes inherit `color: var(--accent)` (use `currentColor` for swatch flexibility).
   - Below the waveform, a row of mono 10px time marks: `−60s −45s −30s −15s now` — a manuscript-y x-axis.
 - **Timer block**: a status label (mono 10px uppercase letter-spacing 0.14em — colored accent green when recording, with a leading pulsing `8px` green dot; warn-orange when paused; ink-dim when idle), and below it the big mono timer: `mm:ss` in Geist Mono 56px / 300 / tabular-nums, followed by an `.ms` decimal in 18px ink-dim. The whole stack left-aligned.
@@ -89,7 +89,7 @@ Max-width 920px, padding `36px 40px 80px`. The design intent is **a typeset manu
 
 - **Doc head** (bottom border `--line`, padding-bottom 22px, flex row):
   - File meta (mono 10px uppercase letter-spacing 0.12em, `--ink-dim`): the audio's absolute path on disk, separated by a faint mid-dot from "local". Establishes that the underlying file is real and on the user's machine.
-  - `<h1>`: Newsreader 36px / 400, line-height 1.1, letter-spacing `-0.012em`, color `--ink`. The transcript title — derived from filename or first-line. The prototype uses "Meeting · privacy & the scribe metaphor".
+  - `<h1>`: Newsreader 36px / 400, line-height 1.1, letter-spacing `-0.012em`, color `--ink`. The transcript title — derived from filename or first-line. The prototype uses "Meeting · privacy & the local-first stance".
   - Sub-line (mono 13px, `--ink-muted`): duration, speaker count, language, model used (`whisper-large-v3`), date — separated by `--ink-faint` mid-dots. Surfacing the model is intentional and reinforces trust.
   - Right cluster: three 32px icon buttons (Copy, Open .txt, Open .json). Transparent bg by default, hover adds `--line` border and `--bg-hover`.
 - **Relabel row** (margin-top 22px, bg `--bg-elev`, border `--line`, radius 10px, padding `14px 16px`, vertical gap 12px):

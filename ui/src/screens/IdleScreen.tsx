@@ -163,9 +163,9 @@ export function IdleScreen({ onTranscribe, recentFiles }: Props) {
       )}
 
       <div className="etymology" style={{ marginTop: 8 }}>
-        <div className="head"><b>scribe</b><span>/skraɪb/ &nbsp;·&nbsp; <em>noun</em></span></div>
+        <div className="head"><b>lexis</b><span>/ˈlɛksɪs/ &nbsp;·&nbsp; <em>noun</em></span></div>
         <div className="body">
-          a person who copies out documents. <em>From Latin</em> <b style={{fontWeight:500}}>scrībere</b>, <em>to write</em>. Privately, by hand, on your own page.
+          the full stock of words in a language. <em>From Greek</em> <b style={{fontWeight:500}}>λέξις</b>, <em>word, speech</em>. Yours, kept on your own machine.
         </div>
       </div>
     </div>

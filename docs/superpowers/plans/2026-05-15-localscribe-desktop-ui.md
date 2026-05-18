@@ -2665,7 +2665,7 @@ export function Sidebar({ route, setRoute, currentTranscriptId, setCurrentTransc
     <div className="sidebar">
       <div className="brand">
         <div className="wordmark">LocalLexis</div>
-        <div className="pron">/ˈloʊkəlˌskraɪb/ &nbsp;·&nbsp; v1.0</div>
+        <div className="pron">/ˈloʊkəlˌlɛksɪs/ &nbsp;·&nbsp; v1.0</div>
       </div>
       <button className="new-btn" onClick={() => setRoute('idle')}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -3145,7 +3145,7 @@ Port [screens.jsx#L82–220](../../design_handoff_locallexis/screens.jsx) `Recor
 - Create: `ui/src/screens/RecordScreen.tsx`
 - Create: `ui/src/screens/Waveform.tsx`
 - Create: `ui/src/screens/RecordScreen.test.tsx`
-- Modify: `ui/src/styles/global.css` (port `.record`, `.device-bar`, `.scribe-canvas`, `.timer`, `.record-controls`, `.btn-record`, `.btn-secondary`, `.privacy-note`)
+- Modify: `ui/src/styles/global.css` (port `.record`, `.device-bar`, `.lexis-canvas`, `.timer`, `.record-controls`, `.btn-record`, `.btn-secondary`, `.privacy-note`)
 - Modify: `ui/src/App.tsx`
 
 - [ ] **Step 1: Port styles**

@@ -45,7 +45,7 @@ export function RecordScreen({
         <span style={{ color: 'var(--ink-dim)' }}>16 kHz · mono</span>
       </div>
 
-      <div className="scribe-canvas">
+      <div className="lexis-canvas">
         <Waveform recording={active && !paused} />
         <div className="time-marks">
           <span>−60s</span><span>−45s</span><span>−30s</span><span>−15s</span><span>now</span>

@@ -766,7 +766,7 @@ input, textarea { font-family: inherit; color: inherit; }
   outline: none;
 }
 
-.scribe-canvas {
+.lexis-canvas {
   width: 100%;
   max-width: 880px;
   flex: 1;
@@ -779,20 +779,20 @@ input, textarea { font-family: inherit; color: inherit; }
   position: relative;
   overflow: hidden;
 }
-.scribe-canvas .baseline {
+.lexis-canvas .baseline {
   position: absolute;
   left: 32px; right: 32px;
   top: 50%;
   height: 0.5px;
   background: var(--line-strong);
 }
-.scribe-canvas .gridlines {
+.lexis-canvas .gridlines {
   position: absolute; inset: 0;
   background-image:
     linear-gradient(to right, transparent 0, transparent calc(100% - 1px), var(--line-faint) 100%);
   background-size: 80px 100%;
 }
-.scribe-canvas .time-marks {
+.lexis-canvas .time-marks {
   position: absolute; left: 32px; right: 32px; bottom: 16px;
   display: flex; justify-content: space-between;
   font-family: var(--mono); font-size: 10px; color: var(--ink-faint);

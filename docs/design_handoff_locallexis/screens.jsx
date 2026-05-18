@@ -67,9 +67,9 @@ function IdleScreen({ setRoute }) {
       </div>
 
       <div className="etymology" style={{ marginTop: 8 }}>
-        <div className="head"><b>scribe</b><span>/skraɪb/ &nbsp;·&nbsp; <em>noun</em></span></div>
+        <div className="head"><b>lexis</b><span>/ˈlɛksɪs/ &nbsp;·&nbsp; <em>noun</em></span></div>
         <div className="body">
-          a person who copies out documents. <em>From Latin</em> <b style={{fontWeight:500}}>scrībere</b>, <em>to write</em>. Privately, by hand, on your own page.
+          the full stock of words in a language. <em>From Greek</em> <b style={{fontWeight:500}}>λέξις</b>, <em>word, speech</em>. Yours, kept on your own machine.
         </div>
       </div>
     </div>
@@ -178,7 +178,7 @@ function RecordScreen() {
         <span style={{ color: 'var(--ink-dim)' }}>48 kHz · mono</span>
       </div>
 
-      <div className="scribe-canvas">
+      <div className="lexis-canvas">
         <Waveform recording={recording && !paused} />
         <div className="time-marks">
           <span>−60s</span><span>−45s</span><span>−30s</span><span>−15s</span><span>now</span>
@@ -229,7 +229,7 @@ const SAMPLE_TURNS = [
   { spk: 1, ts: '00:00:47', text: 'Agreed. The UI is a view over the filesystem. That keeps the whole privacy story coherent: there is no second copy, no cloud cache, no secret database somewhere in Application Support.' },
   { spk: 2, ts: '00:01:05', text: 'Do we want to surface the model that ran? Like, a little chip saying "whisper-large-v3, faster-whisper backend, ran for 4 minutes." For trust.' },
   { spk: 0, ts: '00:01:17', text: 'Yeah, in the file meta. Subtle. Not a hero element, more of a footnote — but legible.' },
-  { spk: 1, ts: '00:01:29', text: 'And the recording UI. I keep wanting it to look like a wax cylinder or a seismograph, not like Voice Memos. Something that says: this is being inscribed, not streamed.' },
+  { spk: 1, ts: '00:01:29', text: 'And the recording UI. I keep wanting it to look like a wax cylinder or a seismograph, not like Voice Memos. Something that says: this is being captured to disk, not streamed.' },
 ];
 
 function CompleteScreen({ tweaks }) {
@@ -245,7 +245,7 @@ function CompleteScreen({ tweaks }) {
             <span style={{ color: 'var(--ink-faint)' }}>·</span>
             <span>local</span>
           </div>
-          <h1>Meeting · privacy &amp; the scribe metaphor</h1>
+          <h1>Meeting · privacy &amp; the local-first stance</h1>
           <div className="subline">
             <span>38:21</span><span className="sep">·</span>
             <span>3 speakers</span><span className="sep">·</span>

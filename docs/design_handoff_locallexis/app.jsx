@@ -24,7 +24,7 @@ function App() {
             <div className="tl">
               <span className="dot r" /><span className="dot y" /><span className="dot g" />
             </div>
-            <div className="titlebar-title">LocalScribe</div>
+            <div className="titlebar-title">LocalLexis</div>
           </div>
         )}
         <div className="app">

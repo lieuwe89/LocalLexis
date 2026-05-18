@@ -5,9 +5,9 @@ Cross-platform desktop app for the existing `stt` CLI. Wraps the
 parity plus a transcript library, leaving room for Phase 2
 summarize and RAG search.
 
-Product name: **LocalLexis** (`/ˈloʊkəlˌskraɪb/`). The brand is
-manuscript-themed — ink, scribe, marginalia — and the dominant
-product signal is privacy: nothing leaves the machine.
+Product name: **LocalLexis** (`/ˈloʊkəlˌlɛksɪs/`). The brand is
+manuscript-themed — ink, marginalia, hand-set type — and the
+dominant product signal is privacy: nothing leaves the machine.
 
 ## Goals
 
@@ -160,7 +160,7 @@ arrive over SSE.
 
 **Record (`/record`)** — high-fi.
 - Device pill (wires to `GET /devices`).
-- Scribe canvas (animated SVG waveform).
+- Lexis canvas (animated SVG waveform).
 - Status label + mono timer.
 - Pause / Record / Discard controls. Record start → `POST
   /jobs/record`. Stop → `POST /jobs/{id}/stop`, auto-chains into the

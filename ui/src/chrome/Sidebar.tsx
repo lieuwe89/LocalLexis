@@ -35,7 +35,7 @@ export function Sidebar({ route, setRoute, setCurrentTranscriptId, jobActive }: 
     <div className="sidebar">
       <div className="brand">
         <div className="wordmark">LocalLexis</div>
-        <div className="pron">/ˈloʊkəlˌskraɪb/ {version && <>&nbsp;·&nbsp; {version}</>}</div>
+        <div className="pron">/ˈloʊkəlˌlɛksɪs/ {version && <>&nbsp;·&nbsp; {version}</>}</div>
       </div>
       <button className="new-btn" onClick={() => setRoute('idle')}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
