@@ -8,11 +8,14 @@ interface State {
   elapsedMs: number;
   error: string | null;
   start: () => void;
+  isFirstLaunch: () => boolean;
+  markFirstLaunchDone: () => void;
   /** Test-only: resets closure state so a subsequent start() runs from scratch. */
   _resetForTests: () => void;
 }
 
 const TICK_MS = 250;
+const FIRST_LAUNCH_KEY = 'locallexis.firstLaunchDone';
 
 export const useBackend = create<State>((set, get) => {
   let started = false;
@@ -50,6 +53,12 @@ export const useBackend = create<State>((set, get) => {
           set({ status: 'failed', error: msg, elapsedMs: Date.now() - startTs });
           stopTicking();
         });
+    },
+    isFirstLaunch: () => {
+      try { return localStorage.getItem(FIRST_LAUNCH_KEY) !== '1'; } catch { return false; }
+    },
+    markFirstLaunchDone: () => {
+      try { localStorage.setItem(FIRST_LAUNCH_KEY, '1'); } catch {}
     },
     _resetForTests: () => {
       stopTicking();

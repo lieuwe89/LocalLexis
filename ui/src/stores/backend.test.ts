@@ -57,3 +57,21 @@ describe('useBackend', () => {
     expect(useBackend.getState().error).toContain('ECONNREFUSED');
   });
 });
+
+describe('useBackend first-launch flag', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useBackend.getState()._resetForTests();
+    useBackend.setState({ status: 'starting', elapsedMs: 0, error: null });
+  });
+
+  it('isFirstLaunch is true when flag absent', () => {
+    expect(useBackend.getState().isFirstLaunch()).toBe(true);
+  });
+
+  it('markFirstLaunchDone persists to localStorage', () => {
+    useBackend.getState().markFirstLaunchDone();
+    expect(localStorage.getItem('locallexis.firstLaunchDone')).toBe('1');
+    expect(useBackend.getState().isFirstLaunch()).toBe(false);
+  });
+});

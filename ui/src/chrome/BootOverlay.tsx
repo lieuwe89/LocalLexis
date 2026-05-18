@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useBackend } from '../stores/backend';
 import './BootOverlay.css';
 
@@ -7,6 +8,13 @@ export function BootOverlay() {
   const status = useBackend(s => s.status);
   const elapsedMs = useBackend(s => s.elapsedMs);
   const error = useBackend(s => s.error);
+  const [isFirstLaunch] = useState(() => useBackend.getState().isFirstLaunch());
+
+  useEffect(() => {
+    if (status === 'ready') {
+      useBackend.getState().markFirstLaunchDone();
+    }
+  }, [status]);
 
   if (status === 'ready') return null;
 
@@ -17,10 +25,15 @@ export function BootOverlay() {
       <div className="boot-overlay__phase">
         {status === 'starting' ? 'Starting audio engine…' : 'Engine failed to start'}
       </div>
-      {status === 'starting' && elapsedMs >= EXTENDED_THRESHOLD_MS && (
+      {status === 'starting' && isFirstLaunch && (
         <div className="boot-overlay__extended">
-          Taking longer than usual. On first launch macOS verifies the app — this usually
-          finishes within 30 seconds.
+          This is the first time you open LocalLexis. macOS is verifying the app — first launch
+          usually takes 20-40 seconds. Subsequent launches start instantly.
+        </div>
+      )}
+      {status === 'starting' && !isFirstLaunch && elapsedMs >= EXTENDED_THRESHOLD_MS && (
+        <div className="boot-overlay__extended">
+          Taking longer than usual. Try quitting and relaunching if this persists.
         </div>
       )}
       {status === 'failed' && (
