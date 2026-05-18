@@ -6,9 +6,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-import sounddevice as sd
-import soundfile as sf
-
 
 @contextmanager
 def _install_stop_signals(stop: threading.Event) -> Iterator[None]:
@@ -51,6 +48,9 @@ def record_to_file(
     stop_event: threading.Event | None = None,
     device: str | int | None = None,
 ) -> Path:
+    import sounddevice as sd  # lazy: deferred from module load to first record call
+    import soundfile as sf  # lazy: deferred from module load to first record call
+
     stop = stop_event or threading.Event()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 

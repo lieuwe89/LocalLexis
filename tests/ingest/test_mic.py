@@ -29,8 +29,8 @@ def test_record_writes_flac(tmp_path: Path):
     stop.is_set.side_effect = [False, False, True]
 
     with (
-        patch("speechtotext.ingest.mic.sd.InputStream") as stream_cls,
-        patch("speechtotext.ingest.mic.sf.SoundFile") as sf_cls,
+        patch("sounddevice.InputStream") as stream_cls,
+        patch("soundfile.SoundFile") as sf_cls,
     ):
         stream = stream_cls.return_value.__enter__.return_value
         stream.read.side_effect = [(c, False) for c in fake_chunks]
@@ -132,7 +132,7 @@ def _read(n):
     return np.zeros((n, 1), dtype=np.int16), False
 fake_stream.read.side_effect = _read
 
-with patch.object(mic.sd, "InputStream", return_value=fake_stream):
+with patch("sounddevice.InputStream", return_value=fake_stream):
     mic.record_to_file(Path({str(out)!r}), sample_rate=16000, channels=1, block_size=1600)
 """
     )
