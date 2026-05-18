@@ -1,5 +1,7 @@
 """Lazy-import guard: importing the wrapper must not import faster_whisper."""
-from __future__ import annotations
+# NB: This is a module-level guard. The end-to-end sidecar cold-start guarantee
+# (that creating the FastAPI app doesn't import faster_whisper either) is
+# covered separately by tests/api/test_sidecar_cold_start.py (Task 3).
 
 import importlib
 import sys

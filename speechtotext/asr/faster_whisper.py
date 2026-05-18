@@ -44,7 +44,7 @@ class FasterWhisperASR:
         backend: Literal["cpu", "cuda", "mps"] = "cpu",
         download_root: Path | None = None,
     ) -> None:
-        from faster_whisper import WhisperModel  # lazy: heavy import deferred to first transcribe
+        from faster_whisper import WhisperModel  # lazy: deferred from module load to first instantiation
 
         device, compute_type = _DEVICE_MAP[backend]
         bundled = _resolve_bundled_model(model_size)
