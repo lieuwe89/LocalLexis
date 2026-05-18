@@ -1,7 +1,10 @@
 """Boot-time guard: creating the FastAPI app must not import heavy ML libs.
 
-These are loaded lazily in the runner so /health, /devices, /config respond
-seconds earlier on a cold sidecar start.
+Scope: covers create_app() only. /health, /devices, and /config respond
+without touching the ML stack. The runner module (and the audio I/O modules
+it imports, e.g. soundfile/sounddevice via speechtotext.ingest.mic) only
+loads when a runner-backed endpoint is first invoked — which is acceptable
+because those endpoints already imply heavy work.
 """
 from __future__ import annotations
 
