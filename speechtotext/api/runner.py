@@ -18,6 +18,7 @@ from speechtotext.diarize.pyannote import PyannoteDiarizer
 from speechtotext.ingest.mic import record_to_file
 from speechtotext.models import ProgressEvent, Transcript
 from speechtotext.pipeline import CancelledError, Pipeline
+from speechtotext.api.workspace import get_workspace_id
 from speechtotext.writer import write_transcript
 
 
@@ -78,7 +79,11 @@ def run_transcribe_job(
                 cancel_event=cancel,
             )
             emit(StageEvent(stage="write", percent=0.0))
-            txt, json_path = write_transcript(transcript)
+            # Stamp the hub's workspace_id into the JSON so synced
+            # devices can attribute the transcript to this workspace.
+            txt, json_path = write_transcript(
+                transcript, workspace_id=get_workspace_id()
+            )
             for seg in transcript.segments:
                 emit(LineEvent(speaker=seg.speaker_id, ts=seg.start, text=seg.text))
             emit(CompleteEvent(

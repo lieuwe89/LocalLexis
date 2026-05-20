@@ -33,11 +33,29 @@ def test_writes_sibling_files(tmp_path: Path):
     assert txt.exists()
     assert js.exists()
     data = json.loads(js.read_text())
-    assert data["version"] == 1
+    assert data["version"] == 2
     assert data["language"] == "en"
     assert data["speakers"]["SPEAKER_00"] == "Speaker 1"
     assert len(data["segments"]) == 2
     assert data["segments"][0]["text"] == "hello"
+
+
+def test_v2_sync_fields_present_and_empty_by_default(tmp_path: Path):
+    audio = tmp_path / "rec.mp3"
+    audio.write_bytes(b"fake")
+    write_transcript(_transcript(audio))
+    data = json.loads(audio.with_suffix(".json").read_text())
+    assert data["_workspace_id"] == ""
+    assert data["_clocks"] == {}
+    assert data["_history"] == []
+
+
+def test_workspace_id_stamped_when_provided(tmp_path: Path):
+    audio = tmp_path / "rec.mp3"
+    audio.write_bytes(b"fake")
+    write_transcript(_transcript(audio), workspace_id="ws_abc123")
+    data = json.loads(audio.with_suffix(".json").read_text())
+    assert data["_workspace_id"] == "ws_abc123"
 
 
 def test_txt_format(tmp_path: Path):
@@ -62,4 +80,4 @@ def test_atomic_replace(tmp_path: Path):
     write_transcript(_transcript(audio))
     data = json.loads(audio.with_suffix(".json").read_text())
     assert "old" not in data
-    assert data["version"] == 1
+    assert data["version"] == 2
