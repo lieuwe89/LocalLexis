@@ -13,10 +13,12 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from speechtotext import __version__
 from speechtotext.api.jobs import JobRegistry
 from speechtotext.api.library_db import LibraryDB
+from speechtotext.api.pairing import PairingTokenStore
 from speechtotext.api.routes_config import router as config_router
 from speechtotext.api.routes_devices import router as devices_router
 from speechtotext.api.routes_jobs import router as jobs_router
 from speechtotext.api.routes_models import router as models_router
+from speechtotext.api.routes_pairing import router as pairing_router
 from speechtotext.api.routes_transcripts import router as transcripts_router
 from speechtotext.api.routes_watch import router as watch_router
 from speechtotext.api.warmup import warm_microphone_in_background
@@ -78,6 +80,7 @@ def create_app(library_db_path: Path | None = None) -> FastAPI:
     app.state.watcher = WatchController()
     app.state.library_dirs: set[Path] = set()
     app.state.library_db = LibraryDB(library_db_path)
+    app.state.pairing_tokens = PairingTokenStore()
 
     try:
         _cfg = load_config()
@@ -103,6 +106,7 @@ def create_app(library_db_path: Path | None = None) -> FastAPI:
     app.include_router(config_router)
     app.include_router(jobs_router)
     app.include_router(models_router)
+    app.include_router(pairing_router)
     app.include_router(transcripts_router)
     app.include_router(watch_router)
 

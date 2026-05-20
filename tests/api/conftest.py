@@ -18,6 +18,7 @@ def _isolated_app_data(tmp_path_factory, monkeypatch):
     directly side-steps the broken parent attribute walk.
     """
     import speechtotext.api.library_db as _library_db
+    import speechtotext.api.secrets_store as _secrets_store
     import speechtotext.api.workspace as _workspace
 
     data_dir = tmp_path_factory.mktemp("appdata")
@@ -27,9 +28,12 @@ def _isolated_app_data(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(
         _library_db, "default_db_path", lambda: data_dir / "library.db"
     )
-    # workspace.py imports default_app_data_dir at module load, so we
-    # patch the workspace module's local binding too.
+    # workspace.py and secrets_store.py import default_app_data_dir at
+    # module load, so we patch the module-local bindings too.
     monkeypatch.setattr(_workspace, "default_app_data_dir", lambda: data_dir)
+    monkeypatch.setattr(
+        _secrets_store, "default_app_data_dir", lambda: data_dir
+    )
 
 
 def pytest_collection_modifyitems(config, items):
