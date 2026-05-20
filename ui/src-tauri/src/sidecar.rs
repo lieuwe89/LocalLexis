@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+use std::fmt::Write as _;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::fmt::Write as _;
+use tauri_plugin_shell::ShellExt;
+
+use crate::hub_state::{HubState, HubStateCell};
 
 #[derive(Default)]
 pub struct SidecarUrl(pub Mutex<Option<String>>);
@@ -75,7 +77,24 @@ fn locate_bundled_models(app: &AppHandle) -> Option<PathBuf> {
     None
 }
 
+/// Spawn the sidecar according to the current hub state.
+///
+/// - hub off (default): localhost-only, random port, stdout JSON
+///   handshake parsed for URL discovery. Same behaviour as before
+///   block 4.
+/// - hub on: `LOCALLEXIS_HEADLESS=1` flips the entry point to
+///   `server.headless`, sidecar binds `0.0.0.0:<port>` over HTTPS
+///   with the persisted self-signed cert, no handshake. We set the
+///   URL directly from `hub.port` so the in-app webview can talk to
+///   the sidecar through `https://127.0.0.1:<port>` (the same socket
+///   that LAN devices reach via the host's LAN IP).
 pub fn spawn(app: &AppHandle) -> Result<(), String> {
+    let hub: HubState = {
+        let cell: State<HubStateCell> = app.state();
+        let snapshot = cell.0.lock().unwrap().clone();
+        snapshot
+    };
+
     // Generate the bearer token first and stash it in state, so the frontend
     // already sees a valid token by the time it polls sidecar_url. The same
     // string goes to the sidecar via LOCALLEXIS_API_TOKEN; the sidecar's
@@ -89,6 +108,13 @@ pub fn spawn(app: &AppHandle) -> Result<(), String> {
 
     let mut env: HashMap<String, String> = HashMap::new();
     env.insert("LOCALLEXIS_API_TOKEN".to_string(), token);
+
+    if hub.enabled {
+        env.insert("LOCALLEXIS_HEADLESS".to_string(), "1".to_string());
+        env.insert("LOCALLEXIS_HOST".to_string(), "0.0.0.0".to_string());
+        env.insert("LOCALLEXIS_PORT".to_string(), hub.port.to_string());
+        env.insert("LOCALLEXIS_TLS_ENABLED".to_string(), "1".to_string());
+    }
 
     if let Some(models_dir) = locate_bundled_models(app) {
         eprintln!("[locallexis] bundled models: {}", models_dir.display());
@@ -124,6 +150,14 @@ pub fn spawn(app: &AppHandle) -> Result<(), String> {
     let child_state: State<SidecarChild> = app.state();
     *child_state.0.lock().unwrap() = Some(child);
 
+    if hub.enabled {
+        // Headless sidecar does not emit a handshake; set the URL
+        // directly so the frontend can dial it without waiting.
+        let url_state: State<SidecarUrl> = app.state();
+        *url_state.0.lock().unwrap() =
+            Some(format!("https://127.0.0.1:{}", hub.port));
+    }
+
     let app_for_task = app.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
@@ -135,8 +169,13 @@ pub fn spawn(app: &AppHandle) -> Result<(), String> {
                         .and_then(|v| v.get("port"))
                         .and_then(|v| v.as_u64())
                     {
+                        // Only the non-headless sidecar emits the
+                        // handshake; in headless mode this branch is
+                        // never hit, and we've already set the URL
+                        // above from the configured port.
                         let state: State<SidecarUrl> = app_for_task.state();
-                        *state.0.lock().unwrap() = Some(format!("http://127.0.0.1:{}", p));
+                        *state.0.lock().unwrap() =
+                            Some(format!("http://127.0.0.1:{}", p));
                     }
                 }
             }
@@ -144,4 +183,21 @@ pub fn spawn(app: &AppHandle) -> Result<(), String> {
     });
 
     Ok(())
+}
+
+/// Stop the running sidecar and start a fresh one with the current
+/// hub state. Invoked by `set_hub_state` so the toggle takes effect
+/// immediately.
+pub fn restart(app: &AppHandle) -> Result<(), String> {
+    {
+        let child_state: State<SidecarChild> = app.state();
+        if let Some(child) = child_state.0.lock().unwrap().take() {
+            let _ = child.kill();
+        }
+        // Blank the URL so the frontend can show a transient
+        // "reconnecting" state rather than dial the old socket.
+        let url_state: State<SidecarUrl> = app.state();
+        *url_state.0.lock().unwrap() = None;
+    }
+    spawn(app)
 }

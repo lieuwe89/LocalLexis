@@ -1,3 +1,4 @@
+mod hub_state;
 mod sidecar;
 
 use tauri::Manager;
@@ -13,8 +14,22 @@ pub fn run() {
         .manage(sidecar::SidecarUrl::default())
         .manage(sidecar::SidecarToken::default())
         .manage(sidecar::SidecarChild::default())
-        .invoke_handler(tauri::generate_handler![sidecar::sidecar_url])
+        .manage(hub_state::HubStateCell::default())
+        .invoke_handler(tauri::generate_handler![
+            sidecar::sidecar_url,
+            hub_state::get_hub_state,
+            hub_state::set_hub_state,
+        ])
         .setup(|app| {
+            // Load persisted hub state once at startup so the first
+            // sidecar::spawn sees the right mode without an extra
+            // restart.
+            let initial = hub_state::load(&app.handle());
+            {
+                let cell: tauri::State<hub_state::HubStateCell> =
+                    app.state();
+                *cell.0.lock().unwrap() = initial;
+            }
             sidecar::spawn(&app.handle()).expect("failed to start sidecar");
             Ok(())
         })
