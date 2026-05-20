@@ -135,10 +135,14 @@ def pair_device(req: PairRequest, request: Request) -> PairResponse:
     workspace_key = get_workspace_key()
     sealed = SealedBox(curve_pubkey).encrypt(workspace_key)
 
-    # device_id is hub-assigned. v1 stops at allocation — block 5c
-    # persists the device record (pubkey + last_seen + name) so signed
-    # requests can be verified.
+    # device_id is hub-assigned. Persist the pubkey + name so the
+    # subsequent signed-request middleware can verify the device.
     device_id = new_device_id()
+    request.app.state.device_registry.register(
+        device_id=device_id,
+        pubkey_b64=req.device_pubkey_b64,
+        name=req.device_name,
+    )
 
     return PairResponse(
         device_id=device_id,

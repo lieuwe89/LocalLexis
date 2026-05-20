@@ -11,6 +11,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from speechtotext import __version__
+from speechtotext.api.devices import DeviceRegistry
 from speechtotext.api.jobs import JobRegistry
 from speechtotext.api.library_db import LibraryDB
 from speechtotext.api.pairing import PairingTokenStore
@@ -63,7 +64,10 @@ class BearerAuthMiddleware:
         await self.app(scope, receive, send)
 
 
-def create_app(library_db_path: Path | None = None) -> FastAPI:
+def create_app(
+    library_db_path: Path | None = None,
+    devices_db_path: Path | None = None,
+) -> FastAPI:
     app = FastAPI(title="LocalLexis", version=__version__)
     # Order matters: middleware added LAST runs OUTERMOST, so CORS must be
     # added after auth — that way 401 responses still carry CORS headers and
@@ -81,6 +85,7 @@ def create_app(library_db_path: Path | None = None) -> FastAPI:
     app.state.library_dirs: set[Path] = set()
     app.state.library_db = LibraryDB(library_db_path)
     app.state.pairing_tokens = PairingTokenStore()
+    app.state.device_registry = DeviceRegistry(devices_db_path)
 
     try:
         _cfg = load_config()

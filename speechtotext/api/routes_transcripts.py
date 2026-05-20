@@ -6,9 +6,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from speechtotext.api.auth import verify_device_signature
 from speechtotext.api.crdt import (
     OpRequest,
     TranscriptState,
@@ -116,7 +117,10 @@ def patch_relabel(tid: str, mapping: dict[str, str], request: Request) -> dict:
 
 @router.patch("/transcripts/{tid}", response_model=PatchResult)
 def patch_transcript_op(
-    tid: str, body: PatchOpBody, request: Request
+    tid: str,
+    body: PatchOpBody,
+    request: Request,
+    device_id: str = Depends(verify_device_signature),
 ) -> PatchResult:
     """Apply a CRDT op to a transcript.
 
