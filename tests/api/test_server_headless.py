@@ -120,3 +120,145 @@ class TestHeadlessTls:
         monkeypatch.setenv("LOCALLEXIS_TLS_ENABLED", "0")
         server.headless()
         assert "ssl_certfile" not in fake_uvicorn[0]
+
+
+class TestHeadlessDualBind:
+    """LOCALLEXIS_LOOPBACK_PORT + TLS triggers dual-bind for the Tauri
+    webview, which cannot reach the self-signed HTTPS port directly.
+    """
+
+    @pytest.fixture
+    def fake_dual_bind(self, monkeypatch):
+        calls: list[dict] = []
+
+        def fake(app, **kwargs):
+            calls.append({"app": app, **kwargs})
+
+        monkeypatch.setattr(server, "_run_dual_bind", fake)
+        return calls
+
+    def test_loopback_port_unset_uses_single_uvicorn(
+        self, fake_uvicorn, fake_dual_bind, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.setenv("LOCALLEXIS_TLS_ENABLED", "1")
+        monkeypatch.delenv("LOCALLEXIS_LOOPBACK_PORT", raising=False)
+        monkeypatch.delenv("LOCALLEXIS_HOST", raising=False)
+        monkeypatch.delenv("LOCALLEXIS_PORT", raising=False)
+        import speechtotext.api.tls as _tls
+
+        monkeypatch.setattr(_tls, "default_app_data_dir", lambda: tmp_path)
+        server.headless()
+        assert fake_dual_bind == []
+        assert len(fake_uvicorn) == 1
+
+    def test_loopback_port_without_tls_falls_back_to_single(
+        self, fake_uvicorn, fake_dual_bind, monkeypatch
+    ) -> None:
+        """No TLS = no need for dual-bind even if loopback is requested."""
+        monkeypatch.delenv("LOCALLEXIS_TLS_ENABLED", raising=False)
+        monkeypatch.setenv("LOCALLEXIS_LOOPBACK_PORT", "8766")
+        monkeypatch.delenv("LOCALLEXIS_HOST", raising=False)
+        monkeypatch.delenv("LOCALLEXIS_PORT", raising=False)
+        server.headless()
+        assert fake_dual_bind == []
+        assert len(fake_uvicorn) == 1
+
+    def test_dual_bind_when_tls_and_loopback(
+        self, fake_uvicorn, fake_dual_bind, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.setenv("LOCALLEXIS_TLS_ENABLED", "1")
+        monkeypatch.setenv("LOCALLEXIS_LOOPBACK_PORT", "8766")
+        monkeypatch.delenv("LOCALLEXIS_HOST", raising=False)
+        monkeypatch.delenv("LOCALLEXIS_PORT", raising=False)
+        import speechtotext.api.tls as _tls
+
+        monkeypatch.setattr(_tls, "default_app_data_dir", lambda: tmp_path)
+        server.headless()
+        assert fake_uvicorn == [], "should NOT call uvicorn.run in dual-bind mode"
+        assert len(fake_dual_bind) == 1
+        call = fake_dual_bind[0]
+        assert call["tls_host"] == "0.0.0.0"
+        assert call["tls_port"] == 8765
+        assert call["loopback_port"] == 8766
+        assert call["cert_path"] == tmp_path / "hub-cert.pem"
+        assert call["key_path"] == tmp_path / "hub-key.pem"
+
+    def test_non_integer_loopback_port_exits_clearly(
+        self, fake_uvicorn, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("LOCALLEXIS_LOOPBACK_PORT", "nope")
+        with pytest.raises(SystemExit) as exc:
+            server.headless()
+        assert "LOCALLEXIS_LOOPBACK_PORT" in str(exc.value)
+
+
+class TestDualBindRunner:
+    """The dual-bind helper builds two uvicorn configs and runs them
+    concurrently; assert the shape of those configs without actually
+    starting servers."""
+
+    def test_builds_two_configs_with_right_args(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        cert = tmp_path / "cert.pem"
+        key = tmp_path / "key.pem"
+        cert.write_text("")
+        key.write_text("")
+
+        config_calls: list[dict] = []
+
+        class FakeConfig:
+            def __init__(self, app, **kwargs):
+                config_calls.append({"app": app, **kwargs})
+
+        class FakeServer:
+            def __init__(self, cfg):
+                self.cfg = cfg
+
+            async def serve(self):  # pragma: no cover - awaited below
+                return None
+
+        monkeypatch.setattr(server.uvicorn, "Config", FakeConfig)
+        monkeypatch.setattr(server.uvicorn, "Server", FakeServer)
+
+        # asyncio.run consumes the coroutine; let it run to completion
+        # so the awaited gather actually fires the FakeServer.serve()
+        # coroutines (otherwise we'd leak a "coroutine was never awaited"
+        # warning).
+        import asyncio
+
+        ran: list[bool] = []
+
+        def fake_run(coro):
+            ran.append(True)
+            asyncio.get_event_loop_policy().new_event_loop().run_until_complete(coro)
+
+        monkeypatch.setattr(asyncio, "run", fake_run)
+
+        sentinel_app = object()
+        server._run_dual_bind(
+            sentinel_app,
+            tls_host="0.0.0.0",
+            tls_port=8765,
+            cert_path=cert,
+            key_path=key,
+            loopback_port=8766,
+        )
+
+        assert ran == [True]
+        assert len(config_calls) == 2
+        https_cfg = next(
+            c for c in config_calls if "ssl_certfile" in c
+        )
+        loop_cfg = next(
+            c for c in config_calls if "ssl_certfile" not in c
+        )
+        assert https_cfg["host"] == "0.0.0.0"
+        assert https_cfg["port"] == 8765
+        assert https_cfg["ssl_certfile"] == str(cert)
+        assert https_cfg["ssl_keyfile"] == str(key)
+        assert https_cfg["app"] is sentinel_app
+        assert loop_cfg["host"] == "127.0.0.1"
+        assert loop_cfg["port"] == 8766
+        assert loop_cfg["lifespan"] == "off"
+        assert loop_cfg["app"] is sentinel_app

@@ -56,6 +56,31 @@ fn generate_token() -> String {
     s
 }
 
+/// Pick a free loopback port for the Tauri webview ↔ sidecar HTTP
+/// channel when hub mode is on.
+///
+/// Hub mode binds the sidecar to HTTPS on `0.0.0.0:<hub.port>` for LAN
+/// devices, but WebKit / WebView2 reject the self-signed cert if the
+/// webview itself dials that socket. The sidecar therefore additionally
+/// serves plain HTTP on `127.0.0.1:<loopback>` for the desktop UI; this
+/// helper picks an OS-assigned port for it.
+///
+/// Race window: we bind, read the port, then drop the listener so the
+/// sidecar can bind it itself. Another process could in theory grab the
+/// port in between — vanishingly unlikely on a desktop machine, and the
+/// failure mode (sidecar fails to start) is loud.
+fn pick_free_loopback_port() -> Result<u16, String> {
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("bind loopback port failed: {e}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("local_addr failed: {e}"))?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
 fn locate_bundled_models(app: &AppHandle) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(resource_dir) = app.path().resource_dir() {
@@ -83,11 +108,13 @@ fn locate_bundled_models(app: &AppHandle) -> Option<PathBuf> {
 ///   handshake parsed for URL discovery. Same behaviour as before
 ///   block 4.
 /// - hub on: `LOCALLEXIS_HEADLESS=1` flips the entry point to
-///   `server.headless`, sidecar binds `0.0.0.0:<port>` over HTTPS
-///   with the persisted self-signed cert, no handshake. We set the
-///   URL directly from `hub.port` so the in-app webview can talk to
-///   the sidecar through `https://127.0.0.1:<port>` (the same socket
-///   that LAN devices reach via the host's LAN IP).
+///   `server.headless`, which serves HTTPS on `0.0.0.0:<hub.port>`
+///   for LAN devices *and* plain HTTP on `127.0.0.1:<loopback>` for
+///   the Tauri webview (WebKit / WebView2 reject the self-signed
+///   cert on the LAN socket). No stdout handshake — the loopback
+///   port is allocated here and threaded into the sidecar via
+///   `LOCALLEXIS_LOOPBACK_PORT`; the URL state is set directly so
+///   the frontend can dial without waiting.
 pub fn spawn(app: &AppHandle) -> Result<(), String> {
     let hub: HubState = {
         let cell: State<HubStateCell> = app.state();
@@ -109,12 +136,20 @@ pub fn spawn(app: &AppHandle) -> Result<(), String> {
     let mut env: HashMap<String, String> = HashMap::new();
     env.insert("LOCALLEXIS_API_TOKEN".to_string(), token);
 
-    if hub.enabled {
+    // Hub-mode dual-bind loopback port. Allocated up front so we can
+    // (a) inject it into the sidecar env and (b) set the SidecarUrl
+    // state below without waiting for any stdout handshake.
+    let loopback_port: Option<u16> = if hub.enabled {
         env.insert("LOCALLEXIS_HEADLESS".to_string(), "1".to_string());
         env.insert("LOCALLEXIS_HOST".to_string(), "0.0.0.0".to_string());
         env.insert("LOCALLEXIS_PORT".to_string(), hub.port.to_string());
         env.insert("LOCALLEXIS_TLS_ENABLED".to_string(), "1".to_string());
-    }
+        let p = pick_free_loopback_port()?;
+        env.insert("LOCALLEXIS_LOOPBACK_PORT".to_string(), p.to_string());
+        Some(p)
+    } else {
+        None
+    };
 
     if let Some(models_dir) = locate_bundled_models(app) {
         eprintln!("[locallexis] bundled models: {}", models_dir.display());
@@ -150,12 +185,15 @@ pub fn spawn(app: &AppHandle) -> Result<(), String> {
     let child_state: State<SidecarChild> = app.state();
     *child_state.0.lock().unwrap() = Some(child);
 
-    if hub.enabled {
-        // Headless sidecar does not emit a handshake; set the URL
-        // directly so the frontend can dial it without waiting.
+    if let Some(loopback) = loopback_port {
+        // Headless sidecar emits no stdout handshake; set the URL
+        // directly so the frontend can dial it without waiting. We
+        // use the loopback HTTP port (not the LAN HTTPS port) because
+        // WebKit / WebView2 reject the self-signed cert on the LAN
+        // socket — phones still pin the cert via the pairing QR.
         let url_state: State<SidecarUrl> = app.state();
         *url_state.0.lock().unwrap() =
-            Some(format!("https://127.0.0.1:{}", hub.port));
+            Some(format!("http://127.0.0.1:{}", loopback));
     }
 
     let app_for_task = app.clone();
