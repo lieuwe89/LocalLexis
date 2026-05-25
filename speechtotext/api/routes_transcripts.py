@@ -29,19 +29,21 @@ router = APIRouter()
 class PatchOpBody(BaseModel):
     """Incoming CRDT op for ``PATCH /transcripts/{tid}``.
 
-    The hub assigns the authoritative ``lamport`` on apply. Clients
-    pass the highest lamport they have observed so far so the hub can
-    avoid demoting them.
+    The hub assigns the authoritative ``lamport`` on apply and stamps
+    the verified ``device_id`` from the signed request — clients cannot
+    supply a device attribution. Clients pass the highest lamport they
+    have observed so far so the hub can avoid demoting them.
     """
 
     op: str = Field(description="Op type. v1 supports 'relabel'.")
     key: str = Field(description="Dotted key, e.g. 'speakers.SPEAKER_00'.")
     value: Any = Field(description="New value at the key.")
-    device: str = Field(min_length=1, description="Device id submitting the op.")
     lamport_observed: int = Field(
         ge=0,
         description="Highest Lamport the client has seen for this workspace.",
     )
+
+    model_config = {"extra": "ignore"}
 
 
 class PatchResult(BaseModel):
@@ -146,7 +148,7 @@ def patch_transcript_op(
         op=body.op,
         key=body.key,
         value=body.value,
-        device=body.device,
+        device=device_id,
         lamport_observed=body.lamport_observed,
     )
     try:

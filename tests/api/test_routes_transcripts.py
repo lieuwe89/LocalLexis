@@ -112,12 +112,11 @@ class TestPatchTranscriptOp:
     """Happy-path PATCH coverage. Each test pairs a device first."""
 
     def _op(self, op="relabel", key="speakers.SPEAKER_00", value="Bob",
-            device="ipad-test", lamport_observed=0):
+            lamport_observed=0):
         return {
             "op": op,
             "key": key,
             "value": value,
-            "device": device,
             "lamport_observed": lamport_observed,
         }
 
@@ -131,7 +130,7 @@ class TestPatchTranscriptOp:
         assert body["lamport_assigned"] >= 1
         raw = json.loads((tmp_path / "meet.json").read_text())
         assert raw["speakers"]["SPEAKER_00"] == "Bob"
-        assert raw["_clocks"]["speakers.SPEAKER_00"]["device"] == "ipad-test"
+        assert raw["_clocks"]["speakers.SPEAKER_00"]["device"] == dev_id
 
     def test_history_grows_on_each_op(self, app_with_lib, tmp_path):
         client = TestClient(app_with_lib)
@@ -197,14 +196,19 @@ class TestPatchTranscriptOp:
         )
         assert r.status_code == 400
 
-    def test_missing_device_field_rejected(self, app_with_lib):
+    def test_extra_body_device_field_silently_ignored(self, app_with_lib):
+        """Server stamps verified device_id; client cannot inject one.
+
+        Older clients still sending body.device must not be rejected —
+        the field is accepted-and-ignored.
+        """
         client = TestClient(app_with_lib)
         sk, dev_id = _pair_device(client)
         body = self._op()
         body["device"] = ""
         r = _signed_patch(client, sk, dev_id, "/transcripts/meet", body)
-        # Pydantic min_length=1 on the body's "device" field.
-        assert r.status_code == 422
+        assert r.status_code == 200, r.text
+        assert r.json()["applied"]["device"] == dev_id
 
     def test_negative_lamport_rejected(self, app_with_lib):
         client = TestClient(app_with_lib)
@@ -237,8 +241,24 @@ class TestPatchTranscriptOp:
         for key in ("op", "key", "value", "device", "lamport", "ts"):
             assert key in applied
         assert applied["op"] == "relabel"
-        assert applied["device"] == "ipad-test"
+        assert applied["device"] == dev_id
         assert applied["from_value"] == "Alice"
+
+    def test_forged_body_device_uses_verified_id(self, app_with_lib, tmp_path):
+        """Regression: client-supplied body.device must be ignored.
+
+        Attacker could otherwise forge a device_id and win LWW ties via
+        string ordering, or attribute edits to other devices.
+        """
+        client = TestClient(app_with_lib)
+        sk, dev_id = _pair_device(client)
+        body = self._op()
+        body["device"] = "zzz-attacker"  # lex > any dev-<hex>
+        r = _signed_patch(client, sk, dev_id, "/transcripts/meet", body)
+        assert r.status_code == 200, r.text
+        assert r.json()["applied"]["device"] == dev_id
+        raw = json.loads((tmp_path / "meet.json").read_text())
+        assert raw["_clocks"]["speakers.SPEAKER_00"]["device"] == dev_id
 
 
 # ── PATCH auth (block 5c) ──────────────────────────────────────────────────
@@ -252,7 +272,6 @@ class TestPatchTranscriptOpAuth:
             "op": "relabel",
             "key": "speakers.SPEAKER_00",
             "value": "X",
-            "device": "ipad-test",
             "lamport_observed": 0,
         }
 
