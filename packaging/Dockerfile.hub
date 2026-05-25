@@ -31,12 +31,16 @@ COPY speechtotext ./speechtotext
 RUN pip install --no-cache-dir -e ".[api]"
 
 ENV LOCALLEXIS_HOST=0.0.0.0 \
-    LOCALLEXIS_PORT=8765
+    LOCALLEXIS_PORT=8765 \
+    LOCALLEXIS_TLS_ENABLED=1
 
 EXPOSE 8765
 
 # /health is served unauthenticated; safe for container healthcheck.
+# --insecure / -k because the hub speaks HTTPS with a self-signed cert by
+# default. Operators terminating TLS at a reverse proxy can override
+# LOCALLEXIS_TLS_ENABLED=0 and drop the -k.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS "http://127.0.0.1:${LOCALLEXIS_PORT}/health" || exit 1
+    CMD curl -fsSk "https://127.0.0.1:${LOCALLEXIS_PORT}/health" || exit 1
 
 CMD ["locallexis-hub"]

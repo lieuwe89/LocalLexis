@@ -22,6 +22,10 @@ Group=locallexis
 WorkingDirectory=/opt/locallexis
 Environment="LOCALLEXIS_HOST=0.0.0.0"
 Environment="LOCALLEXIS_PORT=8765"
+# Self-signed cert + key are generated lazily under the service user's
+# data dir on first start. Override to 0 only if TLS is terminated by a
+# reverse proxy in front of this unit.
+Environment="LOCALLEXIS_TLS_ENABLED=1"
 ExecStart=/opt/locallexis/.venv/bin/locallexis-hub
 Restart=on-failure
 RestartSec=5
