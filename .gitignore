@@ -17,3 +17,4 @@ tests/fixtures/audio/*.wav
 tests/fixtures/audio/_work/
 .worktrees/
 .superpowers/
+.claude/
