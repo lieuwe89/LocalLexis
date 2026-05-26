@@ -230,7 +230,7 @@ pub fn restart(app: &AppHandle) -> Result<(), String> {
     {
         let child_state: State<SidecarChild> = app.state();
         if let Some(child) = child_state.0.lock().unwrap().take() {
-            let _ = child.kill();
+            terminate_child_tree(child);
         }
         // Blank the URL so the frontend can show a transient
         // "reconnecting" state rather than dial the old socket.
@@ -238,4 +238,95 @@ pub fn restart(app: &AppHandle) -> Result<(), String> {
         *url_state.0.lock().unwrap() = None;
     }
     spawn(app)
+}
+
+/// Tear down the sidecar gracefully and sweep its descendant tree.
+///
+/// `CommandChild::kill()` sends SIGKILL to the PyInstaller bootloader
+/// only. The bootloader spawns a real Python process which in turn
+/// spawns `multiprocessing.resource_tracker` and any worker processes
+/// our deps (torch, ctranslate2, ...) create. Those grandchildren get
+/// reparented to launchd and leak — that's the RAM-eating zombie
+/// pattern we hit in production.
+///
+/// New flow on Unix:
+///   1. SIGTERM the direct child so uvicorn's signal handler runs,
+///      FastAPI shuts down, and Python's atexit cleanup terminates
+///      multiprocessing children.
+///   2. Poll for up to ~2s waiting for the child to exit on its own.
+///   3. SIGKILL the child as a fallback if step 2 timed out.
+///   4. Recursively walk descendants via `pgrep -P` and SIGKILL any
+///      that survived (covers grandchildren spawned by the sidecar's
+///      own subprocess calls — e.g. ffmpeg).
+///
+/// On non-Unix we fall back to the plain `CommandChild::kill()` path.
+pub fn terminate_child_tree(child: CommandChild) {
+    #[cfg(unix)]
+    {
+        let pid = child.pid() as i32;
+        // Enumerate descendants *before* signalling the parent.
+        // Once the parent dies, its children are reparented to
+        // launchd (PID 1) and `pgrep -P <pid>` can no longer find
+        // them — so we'd lose the trail.
+        let descendants = collect_descendants(pid);
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
+        let mut exited = false;
+        for _ in 0..20 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            // kill(pid, 0) returns 0 if the process exists, -1 with
+            // ESRCH once it's reaped. Either case stops the wait.
+            if unsafe { libc::kill(pid, 0) } != 0 {
+                exited = true;
+                break;
+            }
+        }
+        if !exited {
+            let _ = child.kill();
+        } else {
+            // Drop CommandChild so its file descriptors close even
+            // though we didn't call kill() on the now-exited process.
+            drop(child);
+        }
+        // Sweep any descendants that survived the SIGTERM cascade.
+        // SIGTERM first so Python's atexit + multiprocessing cleanup
+        // can fire; SIGKILL fallback after a brief grace period.
+        for d in &descendants {
+            unsafe {
+                libc::kill(*d, libc::SIGTERM);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        for d in &descendants {
+            unsafe {
+                libc::kill(*d, libc::SIGKILL);
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+    }
+}
+
+#[cfg(unix)]
+fn collect_descendants(root_pid: i32) -> Vec<i32> {
+    let mut out = Vec::new();
+    let mut stack = vec![root_pid];
+    while let Some(pid) = stack.pop() {
+        let output = std::process::Command::new("pgrep")
+            .arg("-P")
+            .arg(pid.to_string())
+            .output();
+        if let Ok(o) = output {
+            for line in String::from_utf8_lossy(&o.stdout).lines() {
+                if let Ok(child_pid) = line.trim().parse::<i32>() {
+                    stack.push(child_pid);
+                    out.push(child_pid);
+                }
+            }
+        }
+    }
+    out
 }

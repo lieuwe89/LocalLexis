@@ -5,7 +5,7 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
@@ -33,15 +33,27 @@ pub fn run() {
             sidecar::spawn(&app.handle()).expect("failed to start sidecar");
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                let state: tauri::State<sidecar::SidecarChild> = window.state();
-                let child = state.0.lock().unwrap().take();
-                if let Some(child) = child {
-                    let _ = child.kill();
-                }
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // `RunEvent::ExitRequested` covers Cmd+Q, the dock Quit menu, and
+    // programmatic `app.exit()` — paths that `WindowEvent::CloseRequested`
+    // misses on macOS, where closing the last window doesn't quit the
+    // app by default. `RunEvent::Exit` is the final hook before the
+    // process tears down; we run cleanup there so it fires even on
+    // unusual exit paths.
+    //
+    // We deliberately do *not* hook CloseRequested any more: the
+    // sidecar must survive a closed window so the app can be re-opened
+    // from the dock without restarting the backend. Cleanup runs only
+    // when the process is actually about to exit.
+    app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            let state: tauri::State<sidecar::SidecarChild> = app_handle.state();
+            let child = state.0.lock().unwrap().take();
+            if let Some(child) = child {
+                sidecar::terminate_child_tree(child);
             }
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        }
+    });
 }

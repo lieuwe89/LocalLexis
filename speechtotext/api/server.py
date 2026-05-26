@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import atexit
 import json
+import multiprocessing
 import os
 import socket
 import sys
@@ -16,6 +18,41 @@ def pick_port() -> int:
     port = s.getsockname()[1]
     s.close()
     return port
+
+
+def _terminate_multiprocessing_children() -> None:
+    """Force-terminate any lingering ``multiprocessing`` children at exit.
+
+    Our deps (faster-whisper / ctranslate2, torch) and Python's own
+    ``multiprocessing.resource_tracker`` can leave worker processes
+    behind when the sidecar is killed abruptly. Those grandchildren
+    get reparented to launchd and leak RAM indefinitely — we observed
+    ~30 GB across stale sidecars from days-old runs.
+
+    Registering this as ``atexit`` means it fires on uvicorn's normal
+    shutdown path (after SIGTERM is caught by uvicorn) and gives the
+    children a brief window to exit before we SIGKILL them.
+    """
+    children = list(multiprocessing.active_children())
+    for p in children:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    for p in children:
+        try:
+            p.join(timeout=0.5)
+        except Exception:
+            pass
+    # Anything still alive after a graceful terminate gets killed.
+    for p in multiprocessing.active_children():
+        try:
+            p.kill()
+        except Exception:
+            pass
+
+
+atexit.register(_terminate_multiprocessing_children)
 
 
 def run(host: str = "127.0.0.1", port: int | None = None, print_handshake: bool = True) -> None:

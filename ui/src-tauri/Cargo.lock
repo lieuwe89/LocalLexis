@@ -2028,6 +2028,7 @@ name = "locallexis"
 version = "0.7.2"
 dependencies = [
  "getrandom 0.2.17",
+ "libc",
  "serde",
  "serde_json",
  "tauri",
