@@ -1,10 +1,7 @@
 package app.locallexis.data.crypto
 
-import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 
 /**
  * Persistent store for the workspace symmetric key W that the hub
@@ -60,25 +57,5 @@ class EncryptedPrefsWorkspaceKeyStore(
 
     companion object {
         private const val KEY = "workspace_key_b64"
-        const val DEFAULT_FILE_NAME = "locallexis_workspace"
-
-        /**
-         * Build an [EncryptedPrefsWorkspaceKeyStore] backed by an
-         * EncryptedSharedPreferences file in the app's private data dir.
-         * Must be called from the main process (Keystore access).
-         */
-        fun create(context: Context, fileName: String = DEFAULT_FILE_NAME): EncryptedPrefsWorkspaceKeyStore {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            val prefs = EncryptedSharedPreferences.create(
-                context,
-                fileName,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
-            return EncryptedPrefsWorkspaceKeyStore(prefs)
-        }
     }
 }
