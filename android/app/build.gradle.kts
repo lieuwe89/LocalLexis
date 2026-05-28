@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -13,8 +14,8 @@ android {
         applicationId = "app.locallexis"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.7.5"
+        versionCode = 2
+        versionName = "0.8.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -80,6 +81,12 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.core)
 
+    implementation(libs.lazysodium.android)
+    implementation(libs.androidx.security.crypto)
+
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
@@ -88,4 +95,6 @@ dependencies {
     testImplementation(libs.androidx.test.core.ktx)
     testImplementation(libs.androidx.test.ext.junit.ktx)
     testImplementation(libs.robolectric)
+    testImplementation(libs.lazysodium.java)
+    testImplementation(libs.okhttp.mockwebserver)
 }
