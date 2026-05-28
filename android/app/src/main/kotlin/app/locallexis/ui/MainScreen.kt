@@ -25,6 +25,7 @@ import app.locallexis.features.library.LibraryScreen
 import app.locallexis.features.pairing.PairingScreen
 import app.locallexis.features.recording.RecordingScreen
 import app.locallexis.features.settings.SettingsScreen
+import app.locallexis.features.transcript.TranscriptDetailScreen
 
 private data class NavItem(
     val route: String,
@@ -75,6 +76,11 @@ fun MainScreen() {
             composable("recording") { RecordingScreen() }
             composable("pairing") { PairingScreen() }
             composable("settings") { SettingsScreen() }
+            composable("transcript/{transcriptId}") { entry ->
+                TranscriptDetailScreen(
+                    transcriptId = entry.arguments?.getString("transcriptId").orEmpty(),
+                )
+            }
         }
     }
 }
