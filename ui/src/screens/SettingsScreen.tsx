@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useConfig } from '../stores/config';
 import { api } from '../api/client';
 import type { ConfigDto } from '../api/types';
+import { buildPairingPayload, type HubInfo, type PairingPayloadV1 } from '../lib/pairing';
 
 interface HubState {
   enabled: boolean;
@@ -90,7 +91,7 @@ export function SettingsScreen() {
   const [hub, setHub] = useState<HubState | null>(null);
   const [hubBusy, setHubBusy] = useState(false);
   const [devices, setDevices] = useState<PairedDevice[]>([]);
-  const [pairingToken, setPairingToken] = useState<PairingToken | null>(null);
+  const [pairingPayload, setPairingPayload] = useState<PairingPayloadV1 | null>(null);
   const [pairingError, setPairingError] = useState<string | null>(null);
 
   useEffect(() => { load(); }, [load]);
@@ -117,7 +118,7 @@ export function SettingsScreen() {
   const toggleHub = async (enabled: boolean) => {
     if (!hub) return;
     setHubBusy(true);
-    setPairingToken(null);
+    setPairingPayload(null);
     setPairingError(null);
     try {
       const updated = await invoke<HubState>('set_hub_state', { enabled, port: hub.port });
@@ -131,9 +132,11 @@ export function SettingsScreen() {
 
   const mintPairingToken = async () => {
     setPairingError(null);
+    if (!hub) return;
     try {
-      const r = await api<PairingToken>('/pair/tokens', { method: 'POST' });
-      setPairingToken(r);
+      const minted = await api<PairingToken>('/pair/tokens', { method: 'POST' });
+      const info = await api<HubInfo>('/hub/info');
+      setPairingPayload(buildPairingPayload(info, minted, hub.port));
     } catch (e) {
       setPairingError(String(e));
     }
@@ -257,7 +260,7 @@ export function SettingsScreen() {
               <button type="button" onClick={mintPairingToken} disabled={hubBusy}>
                 Generate pairing code
               </button>
-              {pairingToken && (
+              {pairingPayload && (
                 <pre
                   style={{
                     background: 'var(--bg-muted, #f5f3ec)',
@@ -268,7 +271,7 @@ export function SettingsScreen() {
                     overflowX: 'auto',
                   }}
                 >
-                  {JSON.stringify(pairingToken, null, 2)}
+                  {JSON.stringify(pairingPayload, null, 2)}
                 </pre>
               )}
               {pairingError && (
