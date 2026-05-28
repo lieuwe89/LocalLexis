@@ -118,6 +118,20 @@ class TestSpkiFingerprint:
         fp_b = tls.spki_fingerprint_hex(cert_b.read_bytes())
         assert fp_a != fp_b
 
+    def test_b64_matches_hex_digest(self, config_dir: Path) -> None:
+        # tls_spki_b64 must be base64 of the *same* SHA-256 SPKI digest the
+        # hex helper returns — this is the value the pairing QR carries and
+        # Android pins as ``sha256/<value>`` (OkHttp CertificatePinner).
+        # Lock the encoding so it can't silently drift.
+        import base64
+
+        cert_path, _ = tls.get_or_create_tls(config_dir)
+        cert_bytes = cert_path.read_bytes()
+        b64 = tls.spki_fingerprint_b64(cert_bytes)
+        decoded = base64.b64decode(b64)
+        assert decoded == bytes.fromhex(tls.spki_fingerprint_hex(cert_bytes))
+        assert len(decoded) == 32  # sha256
+
 
 class TestPath:
     def test_default_paths_under_app_data_dir(self) -> None:

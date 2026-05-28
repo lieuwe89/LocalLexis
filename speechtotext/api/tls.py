@@ -25,6 +25,7 @@ distributed via pairing.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 from datetime import datetime, timedelta, timezone
@@ -149,3 +150,17 @@ def spki_fingerprint_hex(cert_pem_bytes: bytes) -> str:
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
     return hashlib.sha256(spki).hexdigest()
+
+
+def spki_fingerprint_b64(cert_pem_bytes: bytes) -> str:
+    """Base64 of the SHA-256 SPKI digest — the OkHttp ``CertificatePinner``
+    pin body. The pairing QR carries this value; the mobile client pins
+    ``sha256/<value>``. Same digest as :func:`spki_fingerprint_hex`,
+    base64-encoded instead of hex.
+    """
+    cert = x509.load_pem_x509_certificate(cert_pem_bytes)
+    spki = cert.public_key().public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return base64.b64encode(hashlib.sha256(spki).digest()).decode("ascii")

@@ -18,6 +18,7 @@ from speechtotext.api.library_db import LibraryDB
 from speechtotext.api.pairing import PairingTokenStore
 from speechtotext.api.routes_config import router as config_router
 from speechtotext.api.routes_devices import router as devices_router
+from speechtotext.api.routes_hub import router as hub_router
 from speechtotext.api.routes_jobs import router as jobs_router
 from speechtotext.api.routes_models import router as models_router
 from speechtotext.api.routes_pairing import router as pairing_router
@@ -150,6 +151,7 @@ def create_app(
     app.state.jobs.set_on_complete_dir(_on_complete_dir)
 
     app.include_router(devices_router)
+    app.include_router(hub_router)
     app.include_router(config_router)
     app.include_router(jobs_router)
     app.include_router(models_router)
