@@ -22,6 +22,10 @@ from speechtotext.api.reconcile import LibraryReconciler
 from speechtotext.api.routes_config import router as config_router
 from speechtotext.api.routes_devices import router as devices_router
 from speechtotext.api.routes_hub import router as hub_router
+from speechtotext.api.routes_ingest import (
+    DEFAULT_MAX_UPLOAD_BYTES,
+    router as ingest_router,
+)
 from speechtotext.api.routes_jobs import router as jobs_router
 from speechtotext.api.routes_models import router as models_router
 from speechtotext.api.routes_pairing import router as pairing_router
@@ -55,6 +59,8 @@ def _is_lan_signed_route(path: str, method: str) -> bool:
     ):
         return True
     if method == "PATCH" and _SIGNED_TRANSCRIPT_PATCH.fullmatch(path):
+        return True
+    if path == "/jobs/upload" and method == "POST":
         return True
     return False
 
@@ -141,13 +147,22 @@ def create_app(
         weakref.WeakValueDictionary()
     )
     app.state.transcript_locks_dict_lock = threading.Lock()
+    app.state.max_upload_bytes = DEFAULT_MAX_UPLOAD_BYTES
 
+    config_default_out_dir: Path | None = None
     try:
         _cfg = load_config()
         if _cfg.default_out_dir:
-            app.state.library_dirs.add(_cfg.default_out_dir)
+            config_default_out_dir = _cfg.default_out_dir
+            app.state.library_dirs.add(config_default_out_dir)
     except Exception:
         pass
+    if config_default_out_dir:
+        app.state.incoming_dir = config_default_out_dir / "incoming"
+    else:
+        from speechtotext.api import library_db as library_db_module
+
+        app.state.incoming_dir = library_db_module.default_app_data_dir() / "incoming"
 
     def _on_complete_dir(dir_path: Path) -> None:
         app.state.library_dirs.add(dir_path)
@@ -165,6 +180,7 @@ def create_app(
     app.include_router(devices_router)
     app.include_router(hub_router)
     app.include_router(config_router)
+    app.include_router(ingest_router)
     app.include_router(jobs_router)
     app.include_router(models_router)
     app.include_router(pairing_router)
