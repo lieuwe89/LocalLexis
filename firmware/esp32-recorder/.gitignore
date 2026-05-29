@@ -1,0 +1,3 @@
+.pio/
+include/LocalLexisConfig.local.h
+include/LocalLexisConfig.wokwi.local.h

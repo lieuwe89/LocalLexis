@@ -1,0 +1,11 @@
+#pragma once
+
+#undef LOCALLEXIS_WIFI_SSID
+#undef LOCALLEXIS_WIFI_PASSWORD
+#undef LOCALLEXIS_WIFI_CHANNEL
+#undef LOCALLEXIS_DEVICE_NAME
+
+#define LOCALLEXIS_WIFI_SSID "your-network"
+#define LOCALLEXIS_WIFI_PASSWORD "your-password"
+#define LOCALLEXIS_WIFI_CHANNEL 0
+#define LOCALLEXIS_DEVICE_NAME "LocalLexis Recorder"
