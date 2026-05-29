@@ -4,6 +4,12 @@ import { useConfig } from '../stores/config';
 import { api, resetSidecarInfo } from '../api/client';
 import type { ConfigDto } from '../api/types';
 import { buildPairingPayload, type HubInfo, type PairingPayloadV1 } from '../lib/pairing';
+import {
+  buildRecorderProvisioning,
+  type PairResponse,
+  type RecorderHello,
+  type RecorderProvisioning,
+} from '../lib/recorderProvisioning';
 
 interface HubState {
   enabled: boolean;
@@ -22,6 +28,12 @@ interface PairingToken {
   expires_at: number;
   workspace_id: string;
   ttl_seconds: number;
+}
+
+interface RecorderBleDevice {
+  id: string;
+  name: string | null;
+  rssi: number | null;
 }
 
 type Draft = Partial<ConfigDto> & { hf_token?: string };
@@ -98,6 +110,10 @@ export function SettingsScreen() {
   const [hubInfo, setHubInfo] = useState<HubInfo | null>(null);
   const [mintedToken, setMintedToken] = useState<PairingToken | null>(null);
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
+  const [recorders, setRecorders] = useState<RecorderBleDevice[]>([]);
+  const [bleBusy, setBleBusy] = useState(false);
+  const [bleError, setBleError] = useState<string | null>(null);
+  const [bleStatus, setBleStatus] = useState<string | null>(null);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -128,6 +144,9 @@ export function SettingsScreen() {
     setHubInfo(null);
     setMintedToken(null);
     setSelectedAddress(null);
+    setRecorders([]);
+    setBleError(null);
+    setBleStatus(null);
     try {
       const updated = await invoke<HubState>('set_hub_state', { enabled, port: hub.port });
       // The sidecar just respawned on a fresh loopback port + token; drop the
@@ -170,6 +189,66 @@ export function SettingsScreen() {
       setDevices(r.devices);
     } catch {
       /* swallow; sticky list rather than blanking */
+    }
+  };
+
+  const scanRecorders = async () => {
+    setBleBusy(true);
+    setBleError(null);
+    setBleStatus('Scanning for LocalLexis recorders…');
+    try {
+      const found = await invoke<RecorderBleDevice[]>('ble_scan_recorders');
+      setRecorders(found);
+      setBleStatus(found.length ? `Found ${found.length} recorder(s).` : 'No recorders found.');
+    } catch (e) {
+      setBleError(String(e));
+      setBleStatus(null);
+    } finally {
+      setBleBusy(false);
+    }
+  };
+
+  const pairRecorderOverBle = async (recorder: RecorderBleDevice) => {
+    if (!hub) return;
+    setBleBusy(true);
+    setBleError(null);
+    setBleStatus(`Connecting to ${recorder.name ?? 'recorder'}…`);
+    try {
+      const hello = await invoke<RecorderHello>('ble_read_recorder_hello', {
+        peripheralId: recorder.id,
+      });
+      const minted = await api<PairingToken>('/pair/tokens', { method: 'POST' });
+      const info = await api<HubInfo>('/hub/info');
+      const addr = selectedAddress ?? info.lan_addresses[0];
+      const payload = buildPairingPayload(info, minted, hub.port, addr);
+      const pairResponse = await api<PairResponse>('/pair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: payload.token,
+          device_pubkey_b64: hello.device_pubkey_b64,
+          device_name: hello.device_name ?? recorder.name ?? 'LocalLexis Recorder',
+        }),
+      });
+      const provisioning: RecorderProvisioning = buildRecorderProvisioning({
+        pairingPayload: payload,
+        pairResponse,
+      });
+      await invoke('ble_send_recorder_provisioning', {
+        peripheralId: recorder.id,
+        provisioning,
+      });
+      setHubInfo(info);
+      setMintedToken(minted);
+      setSelectedAddress(addr ?? null);
+      setPairingPayload(payload);
+      setBleStatus(`Provisioned ${hello.device_name ?? recorder.name ?? pairResponse.device_id}.`);
+      await refreshDevices();
+    } catch (e) {
+      setBleError(String(e));
+      setBleStatus(null);
+    } finally {
+      setBleBusy(false);
     }
   };
 
@@ -311,6 +390,48 @@ export function SettingsScreen() {
               )}
               {pairingError && (
                 <p style={{ color: 'var(--ink-error, crimson)' }}>{pairingError}</p>
+              )}
+
+              <h3 style={{ margin: '1.25rem 0 0.25rem' }}>
+                Bluetooth recorder setup
+              </h3>
+              <button type="button" onClick={scanRecorders} disabled={bleBusy}>
+                {bleBusy ? 'Working…' : 'Scan for Bluetooth recorders'}
+              </button>
+              {bleStatus && (
+                <p style={{ color: 'var(--ink-muted)' }}>{bleStatus}</p>
+              )}
+              {bleError && (
+                <p style={{ color: 'var(--ink-error, crimson)' }}>{bleError}</p>
+              )}
+              {recorders.length > 0 && (
+                <ul style={{ listStyle: 'none', padding: 0 }}>
+                  {recorders.map((recorder) => (
+                    <li
+                      key={recorder.id}
+                      style={{
+                        padding: '0.5rem 0',
+                        borderBottom: '1px solid var(--rule, #e5e0d3)',
+                      }}
+                    >
+                      <div>
+                        <strong>{recorder.name ?? 'LocalLexis Recorder'}</strong>
+                        {recorder.rssi !== null && (
+                          <span style={{ color: 'var(--ink-muted)' }}>
+                            {' '}· RSSI {recorder.rssi}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => pairRecorderOverBle(recorder)}
+                        disabled={bleBusy || !hub.enabled}
+                      >
+                        Pair over Bluetooth
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
 
               <h3 style={{ margin: '1.25rem 0 0.25rem' }}>

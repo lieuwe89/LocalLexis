@@ -1,3 +1,4 @@
+mod ble;
 mod hub_state;
 mod sidecar;
 
@@ -16,6 +17,9 @@ pub fn run() {
         .manage(sidecar::SidecarChild::default())
         .manage(hub_state::HubStateCell::default())
         .invoke_handler(tauri::generate_handler![
+            ble::ble_scan_recorders,
+            ble::ble_read_recorder_hello,
+            ble::ble_send_recorder_provisioning,
             sidecar::sidecar_url,
             hub_state::get_hub_state,
             hub_state::set_hub_state,
