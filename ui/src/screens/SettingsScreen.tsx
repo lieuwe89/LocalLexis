@@ -10,6 +10,7 @@ import {
   type RecorderHello,
   type RecorderProvisioning,
 } from '../lib/recorderProvisioning';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface HubState {
   enabled: boolean;
@@ -114,6 +115,7 @@ export function SettingsScreen() {
   const [bleBusy, setBleBusy] = useState(false);
   const [bleError, setBleError] = useState<string | null>(null);
   const [bleStatus, setBleStatus] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -181,6 +183,17 @@ export function SettingsScreen() {
     if (!hub || !hubInfo || !mintedToken) return;
     setSelectedAddress(addr);
     setPairingPayload(buildPairingPayload(hubInfo, mintedToken, hub.port, addr));
+  };
+
+  const copyPairingCode = async () => {
+    if (!pairingPayload) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(pairingPayload));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable; the raw code is shown below for manual copy */
+    }
   };
 
   const refreshDevices = async () => {
@@ -354,9 +367,8 @@ export function SettingsScreen() {
             <>
               <h3 style={{ marginBottom: '0.25rem' }}>Pair a new device</h3>
               <p style={{ color: 'var(--ink-muted)', marginTop: 0, fontSize: '0.9em' }}>
-                Click to mint a single-use pairing code (5 minute TTL).
-                The device scans the resulting JSON as a QR code; future
-                releases will render the QR inline.
+                Mint a single-use pairing code (5 minute TTL), then scan the QR
+                with the LocalLexis app on your phone (Pair tab).
               </p>
               <button type="button" onClick={mintPairingToken} disabled={hubBusy}>
                 Generate pairing code
@@ -375,92 +387,135 @@ export function SettingsScreen() {
                 </label>
               )}
               {pairingPayload && (
-                <pre
-                  style={{
-                    background: 'var(--bg-muted, #f5f3ec)',
-                    padding: '0.75rem',
-                    marginTop: '0.5rem',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '0.85em',
-                    overflowX: 'auto',
-                  }}
-                >
-                  {JSON.stringify(pairingPayload, null, 2)}
-                </pre>
+                <div style={{ marginTop: '0.75rem' }}>
+                  <div
+                    role="img"
+                    aria-label="Pairing QR code"
+                    style={{
+                      display: 'inline-block',
+                      background: '#ffffff',
+                      padding: '12px',
+                      borderRadius: '8px',
+                    }}
+                  >
+                    <QRCodeSVG
+                      value={JSON.stringify(pairingPayload)}
+                      size={224}
+                      level="M"
+                      marginSize={2}
+                      title="LocalLexis pairing code"
+                    />
+                  </div>
+                  <details style={{ marginTop: '0.5rem' }}>
+                    <summary
+                      style={{
+                        cursor: 'pointer',
+                        fontSize: '0.85em',
+                        color: 'var(--ink-muted)',
+                      }}
+                    >
+                      Can't scan? Enter the code manually
+                    </summary>
+                    <button
+                      type="button"
+                      onClick={copyPairingCode}
+                      style={{ marginTop: '0.5rem' }}
+                    >
+                      {copied ? 'Copied' : 'Copy code'}
+                    </button>
+                    <pre
+                      style={{
+                        background: 'var(--bg-muted, #f5f3ec)',
+                        padding: '0.75rem',
+                        marginTop: '0.5rem',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.85em',
+                        overflowX: 'auto',
+                      }}
+                    >
+                      {JSON.stringify(pairingPayload, null, 2)}
+                    </pre>
+                  </details>
+                </div>
               )}
               {pairingError && (
                 <p style={{ color: 'var(--ink-error, crimson)' }}>{pairingError}</p>
               )}
-
-              <h3 style={{ margin: '1.25rem 0 0.25rem' }}>
-                Bluetooth recorder setup
-              </h3>
-              <button type="button" onClick={scanRecorders} disabled={bleBusy}>
-                {bleBusy ? 'Working…' : 'Scan for Bluetooth recorders'}
-              </button>
-              {bleStatus && (
-                <p style={{ color: 'var(--ink-muted)' }}>{bleStatus}</p>
-              )}
-              {bleError && (
-                <p style={{ color: 'var(--ink-error, crimson)' }}>{bleError}</p>
-              )}
-              {recorders.length > 0 && (
-                <ul style={{ listStyle: 'none', padding: 0 }}>
-                  {recorders.map((recorder) => (
-                    <li
-                      key={recorder.id}
-                      style={{
-                        padding: '0.5rem 0',
-                        borderBottom: '1px solid var(--rule, #e5e0d3)',
-                      }}
-                    >
-                      <div>
-                        <strong>{recorder.name ?? 'LocalLexis Recorder'}</strong>
-                        {recorder.rssi !== null && (
-                          <span style={{ color: 'var(--ink-muted)' }}>
-                            {' '}· RSSI {recorder.rssi}
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => pairRecorderOverBle(recorder)}
-                        disabled={bleBusy || !hub.enabled}
-                      >
-                        Pair over Bluetooth
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <h3 style={{ margin: '1.25rem 0 0.25rem' }}>
-                Paired devices ({devices.length})
-              </h3>
-              <button type="button" onClick={refreshDevices}>
-                Refresh
-              </button>
-              {devices.length === 0 ? (
-                <p style={{ color: 'var(--ink-muted)' }}>
-                  No devices paired yet.
-                </p>
-              ) : (
-                <ul style={{ listStyle: 'none', padding: 0 }}>
-                  {devices.map((d) => (
-                    <li key={d.device_id} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--rule, #e5e0d3)' }}>
-                      <div><strong>{d.name}</strong> <code style={{ fontSize: '0.85em', color: 'var(--ink-muted)' }}>{d.device_id}</code></div>
-                      <div style={{ fontSize: '0.85em', color: 'var(--ink-muted)' }}>
-                        paired {d.paired_at.slice(0, 16).replace('T', ' ')}
-                        {' · '}
-                        {d.last_seen
-                          ? `last seen ${d.last_seen.slice(0, 16).replace('T', ' ')}`
-                          : 'never seen'}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </>
+          )}
+
+          <h3 style={{ margin: '1.25rem 0 0.25rem' }}>
+            Bluetooth recorder setup
+          </h3>
+          <button type="button" onClick={scanRecorders} disabled={bleBusy}>
+            {bleBusy ? 'Working…' : 'Scan for Bluetooth recorders'}
+          </button>
+          {bleStatus && (
+            <p style={{ color: 'var(--ink-muted)' }}>{bleStatus}</p>
+          )}
+          {bleError && (
+            <p style={{ color: 'var(--ink-error, crimson)' }}>{bleError}</p>
+          )}
+          {!hub.enabled && (
+            <p style={{ color: 'var(--ink-muted)', marginTop: '0.5rem', fontSize: '0.9em' }}>
+              Hub mode must be on before pairing.
+            </p>
+          )}
+          {recorders.length > 0 && (
+            <ul style={{ listStyle: 'none', padding: 0 }}>
+              {recorders.map((recorder) => (
+                <li
+                  key={recorder.id}
+                  style={{
+                    padding: '0.5rem 0',
+                    borderBottom: '1px solid var(--rule, #e5e0d3)',
+                  }}
+                >
+                  <div>
+                    <strong>{recorder.name ?? 'LocalLexis Recorder'}</strong>
+                    {recorder.rssi !== null && (
+                      <span style={{ color: 'var(--ink-muted)' }}>
+                        {' '}· RSSI {recorder.rssi}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => pairRecorderOverBle(recorder)}
+                    disabled={bleBusy || !hub.enabled}
+                  >
+                    Pair over Bluetooth
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <h3 style={{ margin: '1.25rem 0 0.25rem' }}>
+            Paired devices ({devices.length})
+          </h3>
+          <button type="button" onClick={refreshDevices}>
+            Refresh
+          </button>
+          {devices.length === 0 ? (
+            <p style={{ color: 'var(--ink-muted)' }}>
+              No devices paired yet.
+            </p>
+          ) : (
+            <ul style={{ listStyle: 'none', padding: 0 }}>
+              {devices.map((d) => (
+                <li key={d.device_id} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--rule, #e5e0d3)' }}>
+                  <div><strong>{d.name}</strong> <code style={{ fontSize: '0.85em', color: 'var(--ink-muted)' }}>{d.device_id}</code></div>
+                  <div style={{ fontSize: '0.85em', color: 'var(--ink-muted)' }}>
+                    paired {d.paired_at.slice(0, 16).replace('T', ' ')}
+                    {' · '}
+                    {d.last_seen
+                      ? `last seen ${d.last_seen.slice(0, 16).replace('T', ' ')}`
+                      : 'never seen'}
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       )}

@@ -86,6 +86,7 @@ void BleProvisioning::begin(const String& advertisedName) {
 
     NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
     advertising->addServiceUUID(LOCALLEXIS_BLE_SERVICE_UUID);
+    advertising->enableScanResponse(true);
     advertising->setName(advertisedName.c_str());
     advertising->start();
     active_ = true;
