@@ -51,11 +51,21 @@ class CryptoBoxTest {
     fun signRequestVerifiesAgainstDevicePublicKey() {
         val pubkey = crypto.devicePublicKey()
         val body = """{"foo":"bar"}""".toByteArray()
-        val sig = crypto.signRequest("POST", "/v1/relabel", body)
+        val sig = crypto.signRequest(
+            method = "POST",
+            path = "/v1/relabel",
+            query = "",
+            timestamp = "1716200000",
+            nonce = "abc123",
+            body = body,
+        )
 
         assertEquals(Sign.BYTES, sig.size)
         val message = "POST".toByteArray() + "\n".toByteArray() +
-            "/v1/relabel".toByteArray() + "\n".toByteArray() + body
+            "/v1/relabel".toByteArray() + "\n".toByteArray() +
+            "1716200000".toByteArray() + "\n".toByteArray() +
+            "abc123".toByteArray() + "\n".toByteArray() +
+            body
         val ok = sodium.cryptoSignVerifyDetached(sig, message, message.size, pubkey)
         assertTrue("signature verification", ok)
     }
@@ -63,10 +73,19 @@ class CryptoBoxTest {
     @Test
     fun signRequestEmptyBody() {
         val pubkey = crypto.devicePublicKey()
-        val sig = crypto.signRequest("GET", "/sync/snapshot", ByteArray(0))
+        val sig = crypto.signRequest(
+            method = "GET",
+            path = "/sync/snapshot",
+            query = "limit=2",
+            timestamp = "1716200001",
+            nonce = "def456",
+            body = ByteArray(0),
+        )
 
         val message = "GET".toByteArray() + "\n".toByteArray() +
-            "/sync/snapshot".toByteArray() + "\n".toByteArray()
+            "/sync/snapshot?limit=2".toByteArray() + "\n".toByteArray() +
+            "1716200001".toByteArray() + "\n".toByteArray() +
+            "def456".toByteArray() + "\n".toByteArray()
         val ok = sodium.cryptoSignVerifyDetached(sig, message, message.size, pubkey)
         assertTrue(ok)
     }

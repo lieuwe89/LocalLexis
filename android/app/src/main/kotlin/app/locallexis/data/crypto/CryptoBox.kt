@@ -16,11 +16,18 @@ interface CryptoBox {
     fun devicePublicKey(): ByteArray
 
     /**
-     * Detached Ed25519 signature over [method] + "\n" + [path] + "\n" + [body].
-     * Matches the format that [speechtotext.api.auth.verify_device_signature]
-     * checks on the hub.
+     * Detached Ed25519 signature over the replay-protected hub request bytes:
+     * [method] + "\n" + [path]["?" + query] + "\n" + [timestamp] + "\n" +
+     * [nonce] + "\n" + [body].
      */
-    fun signRequest(method: String, path: String, body: ByteArray): ByteArray
+    fun signRequest(
+        method: String,
+        path: String,
+        query: String,
+        timestamp: String,
+        nonce: String,
+        body: ByteArray,
+    ): ByteArray
 
     /**
      * Open a sealedbox encrypted to this device's Ed25519 pubkey (after the
@@ -70,8 +77,15 @@ class LazysodiumCryptoBox(
 
     override fun devicePublicKey(): ByteArray = ensureKeypair().publicKey.copyOf()
 
-    override fun signRequest(method: String, path: String, body: ByteArray): ByteArray {
-        val message = buildRequestMessage(method, path, body)
+    override fun signRequest(
+        method: String,
+        path: String,
+        query: String,
+        timestamp: String,
+        nonce: String,
+        body: ByteArray,
+    ): ByteArray {
+        val message = buildRequestMessage(method, path, query, timestamp, nonce, body)
         val sig = ByteArray(Sign.BYTES)
         val ok = sodium.cryptoSignDetached(
             sig,
@@ -132,8 +146,19 @@ class LazysodiumCryptoBox(
     private data class KeyPair(val publicKey: ByteArray, val secretKey: ByteArray)
 }
 
-internal fun buildRequestMessage(method: String, path: String, body: ByteArray): ByteArray {
-    val prefix = method.toByteArray() + NEWLINE + path.toByteArray() + NEWLINE
+internal fun buildRequestMessage(
+    method: String,
+    path: String,
+    query: String,
+    timestamp: String,
+    nonce: String,
+    body: ByteArray,
+): ByteArray {
+    val target = if (query.isBlank()) path else "$path?$query"
+    val prefix = method.toByteArray() + NEWLINE +
+        target.toByteArray() + NEWLINE +
+        timestamp.toByteArray() + NEWLINE +
+        nonce.toByteArray() + NEWLINE
     return prefix + body
 }
 

@@ -9,6 +9,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import org.junit.Assert.assertThrows
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -58,10 +59,44 @@ class SignedRequestInterceptorTest {
         assertNotNull("signature header present", sigB64)
 
         // Reconstruct message Hub-side and verify with device pubkey.
-        val message = ("GET\n/sync/snapshot\n").toByteArray()
+        val timestamp = recorded.getHeader("X-Timestamp")
+        val nonce = recorded.getHeader("X-Nonce")
+        assertNotNull("timestamp header present", timestamp)
+        assertNotNull("nonce header present", nonce)
+        val message = ("GET\n/sync/snapshot\n$timestamp\n$nonce\n").toByteArray()
         val sig = Base64.getDecoder().decode(sigB64)
         val ok = sodium.cryptoSignVerifyDetached(sig, message, message.size, crypto.devicePublicKey())
         assertTrue("signature verifies", ok)
+    }
+
+    @Test
+    fun signsQueryTimestampAndNonceForReplayProtectedHubAuth() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+
+        val req = Request.Builder()
+            .url(server.url("/sync/snapshot?limit=2&offset=4"))
+            .get()
+            .build()
+
+        http.newCall(req).execute().close()
+
+        val recorded = server.takeRequest()
+        val timestamp = recorded.getHeader("X-Timestamp")
+        val nonce = recorded.getHeader("X-Nonce")
+        val sigB64 = recorded.getHeader("X-Signature-B64")
+        assertNotNull("timestamp header present", timestamp)
+        assertNotNull("nonce header present", nonce)
+        assertNotNull("signature header present", sigB64)
+        assertTrue("nonce is 128-bit hex", nonce!!.matches(Regex("[0-9a-f]{32}")))
+
+        val message = (
+            "GET\n/sync/snapshot?limit=2&offset=4\n" +
+                "$timestamp\n" +
+                "$nonce\n"
+            ).toByteArray()
+        val sig = Base64.getDecoder().decode(sigB64)
+        val ok = sodium.cryptoSignVerifyDetached(sig, message, message.size, crypto.devicePublicKey())
+        assertTrue("signature verifies against replay-protected hub bytes", ok)
     }
 
     @Test
@@ -78,10 +113,29 @@ class SignedRequestInterceptorTest {
 
         val recorded = server.takeRequest()
         val sigB64 = recorded.getHeader("X-Signature-B64")!!
-        val message = ("PATCH\n/transcripts/abc/relabel\n").toByteArray() + body
+        val timestamp = recorded.getHeader("X-Timestamp")
+        val nonce = recorded.getHeader("X-Nonce")
+        assertNotNull("timestamp header present", timestamp)
+        assertNotNull("nonce header present", nonce)
+        val message = ("PATCH\n/transcripts/abc/relabel\n$timestamp\n$nonce\n").toByteArray() + body
         val sig = Base64.getDecoder().decode(sigB64)
         val ok = sodium.cryptoSignVerifyDetached(sig, message, message.size, crypto.devicePublicKey())
         assertTrue(ok)
+    }
+
+    @Test
+    fun rejectsOversizedSignedBody() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+
+        val body = ByteArray(1_048_577) { 0 }.toRequestBody()
+        val req = Request.Builder()
+            .url(server.url("/transcripts/abc/relabel"))
+            .patch(body)
+            .build()
+
+        assertThrows(java.io.IOException::class.java) {
+            http.newCall(req).execute().close()
+        }
     }
 
     @Test
