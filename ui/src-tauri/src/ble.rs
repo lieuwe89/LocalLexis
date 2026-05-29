@@ -11,7 +11,6 @@ use uuid::Uuid;
 
 const SCAN_SECONDS: u64 = 4;
 const RESOLVE_POLL_MS: u64 = 250;
-const RSSI_FALLBACK_TOLERANCE: u16 = 25;
 const RECORDER_NAME_PREFIX: &str = "LocalLexis Recorder";
 const PROVISION_FRAME_BYTES: usize = 20;
 const PROVISION_FRAME_DATA_BYTES: usize = 14;
@@ -64,13 +63,11 @@ pub struct RecorderProvisioning {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct RecorderResolveHint {
     name: Option<String>,
-    rssi: Option<i16>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RecorderCandidate {
     name: Option<String>,
-    rssi: Option<i16>,
 }
 
 fn is_locallexis_recorder(
@@ -163,7 +160,6 @@ impl PeripheralDiscovery for Adapter {
         }
         Ok(Some(RecorderCandidate {
             name: properties.local_name,
-            rssi: properties.rssi,
         }))
     }
 }
@@ -183,13 +179,11 @@ where
 }
 
 fn candidate_matches_hint(candidate: &RecorderCandidate, hint: &RecorderResolveHint) -> bool {
+    // RSSI deliberately ignored: real-world BLE swings ±30+ dBm and
+    // earlier ±25 tolerance produced spurious "recorder not found".
+    // Name + single-candidate uniqueness (enforced by caller) is enough.
     match (&hint.name, &candidate.name) {
-        (Some(expected), Some(actual)) if expected == actual => {}
-        _ => return false,
-    }
-
-    match (hint.rssi, candidate.rssi) {
-        (Some(expected), Some(actual)) => expected.abs_diff(actual) <= RSSI_FALLBACK_TOLERANCE,
+        (Some(expected), Some(actual)) => expected == actual,
         _ => false,
     }
 }
@@ -349,12 +343,8 @@ pub async fn ble_scan_recorders() -> Result<Vec<RecorderBleDevice>, String> {
 pub async fn ble_read_recorder_hello(
     peripheral_id: String,
     expected_name: Option<String>,
-    expected_rssi: Option<i16>,
 ) -> Result<RecorderHello, String> {
-    let hint = RecorderResolveHint {
-        name: expected_name,
-        rssi: expected_rssi,
-    };
+    let hint = RecorderResolveHint { name: expected_name };
     let peripheral = connect_and_discover(&peripheral_id, &hint).await?;
     let result = async {
         let hello_char = find_characteristic(&peripheral, hello_char_uuid())?;
@@ -378,7 +368,6 @@ pub async fn ble_read_recorder_hello(
 pub async fn ble_send_recorder_provisioning(
     peripheral_id: String,
     expected_name: Option<String>,
-    expected_rssi: Option<i16>,
     provisioning: RecorderProvisioning,
 ) -> Result<(), String> {
     if provisioning.protocol != PROTOCOL {
@@ -387,10 +376,7 @@ pub async fn ble_send_recorder_provisioning(
             provisioning.protocol
         ));
     }
-    let hint = RecorderResolveHint {
-        name: expected_name,
-        rssi: expected_rssi,
-    };
+    let hint = RecorderResolveHint { name: expected_name };
     let peripheral = connect_and_discover(&peripheral_id, &hint).await?;
     let result = async {
         let rx_char = find_characteristic(&peripheral, provision_rx_char_uuid())?;
@@ -527,7 +513,6 @@ mod tests {
                 id: "recorder-1".to_string(),
                 candidate: Some(RecorderCandidate {
                     name: Some("LocalLexis Recorder".to_string()),
-                    rssi: Some(-26),
                 }),
             }],
         );
@@ -578,7 +563,6 @@ mod tests {
                 id: "recorder-2".to_string(),
                 candidate: Some(RecorderCandidate {
                     name: Some("LocalLexis Recorder".to_string()),
-                    rssi: Some(-31),
                 }),
             }],
         );
@@ -588,7 +572,6 @@ mod tests {
             "recorder-1",
             &RecorderResolveHint {
                 name: Some("LocalLexis Recorder".to_string()),
-                rssi: Some(-26),
             },
             Duration::ZERO,
             Duration::ZERO,
@@ -601,44 +584,24 @@ mod tests {
     }
 
     #[test]
-    fn does_not_fallback_to_recorder_with_mismatched_rssi_hint() {
-        let discovery = FakeDiscovery::new(
-            vec![],
-            vec![FakePeripheral {
-                id: "recorder-2".to_string(),
-                candidate: Some(RecorderCandidate {
-                    name: Some("LocalLexis Recorder".to_string()),
-                    rssi: Some(-80),
-                }),
-            }],
-        );
-
-        let err = tauri::async_runtime::block_on(find_peripheral_with_rescan(
-            &discovery,
-            "recorder-1",
-            &RecorderResolveHint {
-                name: Some("LocalLexis Recorder".to_string()),
-                rssi: Some(-26),
-            },
-            Duration::ZERO,
-            Duration::ZERO,
-        ))
-        .unwrap_err();
-
-        assert_eq!(err, "recorder not found: recorder-1");
-        assert_eq!(discovery.scan_starts(), 1);
-        assert_eq!(discovery.scan_stops(), 1);
-    }
-
-    #[test]
-    fn rssi_hint_comparison_handles_extreme_values() {
+    fn name_only_fallback_ignores_rssi_drift() {
         let candidate = RecorderCandidate {
             name: Some("LocalLexis Recorder".to_string()),
-            rssi: Some(i16::MAX),
         };
         let hint = RecorderResolveHint {
             name: Some("LocalLexis Recorder".to_string()),
-            rssi: Some(i16::MIN),
+        };
+
+        assert!(candidate_matches_hint(&candidate, &hint));
+    }
+
+    #[test]
+    fn fallback_rejects_mismatched_name() {
+        let candidate = RecorderCandidate {
+            name: Some("Other Recorder".to_string()),
+        };
+        let hint = RecorderResolveHint {
+            name: Some("LocalLexis Recorder".to_string()),
         };
 
         assert!(!candidate_matches_hint(&candidate, &hint));
@@ -652,7 +615,6 @@ mod tests {
                 id: "recorder-2".to_string(),
                 candidate: Some(RecorderCandidate {
                     name: Some("LocalLexis Recorder".to_string()),
-                    rssi: Some(-26),
                 }),
             }],
         );
@@ -680,14 +642,12 @@ mod tests {
                     id: "recorder-2".to_string(),
                     candidate: Some(RecorderCandidate {
                         name: Some("LocalLexis Recorder".to_string()),
-                        rssi: Some(-31),
                     }),
                 },
                 FakePeripheral {
                     id: "recorder-3".to_string(),
                     candidate: Some(RecorderCandidate {
                         name: Some("LocalLexis Recorder".to_string()),
-                        rssi: Some(-32),
                     }),
                 },
             ],
@@ -698,7 +658,6 @@ mod tests {
             "recorder-1",
             &RecorderResolveHint {
                 name: Some("LocalLexis Recorder".to_string()),
-                rssi: Some(-26),
             },
             Duration::ZERO,
             Duration::ZERO,

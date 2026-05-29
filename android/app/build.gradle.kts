@@ -14,8 +14,8 @@ android {
         applicationId = "app.locallexis"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.9.2"
+        versionCode = 6
+        versionName = "0.9.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -54,6 +54,13 @@ android {
     }
 
     packaging {
+        // AGP 8 defaults useLegacyPackaging=false, which keeps native libs
+        // compressed inside the APK. JNA 5.12.x on Android needs the .so
+        // files extracted on install so it can dlopen them by path —
+        // without this, libsodium's first call throws
+        // "Native library (com/sun/jna/<abi>/libjnidispatch.so) not found
+        // in resource path (.)" during pairing.
+        jniLibs.useLegacyPackaging = true
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }
