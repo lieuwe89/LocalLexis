@@ -10,6 +10,8 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 const SCAN_SECONDS: u64 = 4;
+const RESOLVE_POLL_MS: u64 = 250;
+const RSSI_FALLBACK_TOLERANCE: u16 = 25;
 const RECORDER_NAME_PREFIX: &str = "LocalLexis Recorder";
 const PROVISION_FRAME_BYTES: usize = 20;
 const PROVISION_FRAME_DATA_BYTES: usize = 14;
@@ -59,6 +61,18 @@ pub struct RecorderProvisioning {
     pub tls_spki_b64: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct RecorderResolveHint {
+    name: Option<String>,
+    rssi: Option<i16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RecorderCandidate {
+    name: Option<String>,
+    rssi: Option<i16>,
+}
+
 fn is_locallexis_recorder(
     name: Option<&str>,
     services: &[Uuid],
@@ -103,6 +117,149 @@ async fn first_adapter() -> Result<Adapter, String> {
         .ok_or_else(|| "no Bluetooth adapter found".to_string())
 }
 
+trait PeripheralDiscovery {
+    type Peripheral: Clone;
+
+    async fn discovered_peripherals(&self) -> Result<Vec<Self::Peripheral>, String>;
+    async fn start_discovery_scan(&self) -> Result<(), String>;
+    async fn stop_discovery_scan(&self) -> Result<(), String>;
+    fn peripheral_id(peripheral: &Self::Peripheral) -> String;
+    async fn recorder_candidate(
+        &self,
+        peripheral: &Self::Peripheral,
+    ) -> Result<Option<RecorderCandidate>, String>;
+}
+
+impl PeripheralDiscovery for Adapter {
+    type Peripheral = Peripheral;
+
+    async fn discovered_peripherals(&self) -> Result<Vec<Self::Peripheral>, String> {
+        Central::peripherals(self).await.map_err(|e| e.to_string())
+    }
+
+    async fn start_discovery_scan(&self) -> Result<(), String> {
+        Central::start_scan(self, ScanFilter { services: vec![] })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn stop_discovery_scan(&self) -> Result<(), String> {
+        Central::stop_scan(self).await.map_err(|e| e.to_string())
+    }
+
+    fn peripheral_id(peripheral: &Self::Peripheral) -> String {
+        peripheral.id().to_string()
+    }
+
+    async fn recorder_candidate(
+        &self,
+        peripheral: &Self::Peripheral,
+    ) -> Result<Option<RecorderCandidate>, String> {
+        let Some(properties) = peripheral.properties().await.map_err(|e| e.to_string())? else {
+            return Ok(None);
+        };
+        if !is_locallexis_recorder(properties.local_name.as_deref(), &properties.services) {
+            return Ok(None);
+        }
+        Ok(Some(RecorderCandidate {
+            name: properties.local_name,
+            rssi: properties.rssi,
+        }))
+    }
+}
+
+async fn find_cached_peripheral<D>(
+    discovery: &D,
+    peripheral_id: &str,
+) -> Result<Option<D::Peripheral>, String>
+where
+    D: PeripheralDiscovery,
+{
+    Ok(discovery
+        .discovered_peripherals()
+        .await?
+        .into_iter()
+        .find(|peripheral| D::peripheral_id(peripheral) == peripheral_id))
+}
+
+fn candidate_matches_hint(candidate: &RecorderCandidate, hint: &RecorderResolveHint) -> bool {
+    match (&hint.name, &candidate.name) {
+        (Some(expected), Some(actual)) if expected == actual => {}
+        _ => return false,
+    }
+
+    match (hint.rssi, candidate.rssi) {
+        (Some(expected), Some(actual)) => expected.abs_diff(actual) <= RSSI_FALLBACK_TOLERANCE,
+        _ => false,
+    }
+}
+
+async fn find_single_recorder_candidate<D>(
+    discovery: &D,
+    hint: &RecorderResolveHint,
+) -> Result<Option<D::Peripheral>, String>
+where
+    D: PeripheralDiscovery,
+{
+    let mut candidates = Vec::new();
+    for peripheral in discovery.discovered_peripherals().await? {
+        if let Ok(Some(candidate)) = discovery.recorder_candidate(&peripheral).await {
+            if candidate_matches_hint(&candidate, hint) {
+                candidates.push(peripheral);
+            }
+        }
+    }
+
+    match candidates.len() {
+        0 => Ok(None),
+        1 => Ok(candidates.pop()),
+        count => Err(format!(
+            "multiple matching LocalLexis recorders visible ({count}); scan again and choose one"
+        )),
+    }
+}
+
+async fn find_peripheral_with_rescan<D>(
+    discovery: &D,
+    peripheral_id: &str,
+    hint: &RecorderResolveHint,
+    scan_duration: Duration,
+    poll_interval: Duration,
+) -> Result<D::Peripheral, String>
+where
+    D: PeripheralDiscovery,
+{
+    if let Some(peripheral) = find_cached_peripheral(discovery, peripheral_id).await? {
+        return Ok(peripheral);
+    }
+
+    discovery.start_discovery_scan().await?;
+    let deadline = tokio::time::Instant::now() + scan_duration;
+    let peripheral: Result<Option<D::Peripheral>, String> = async {
+        loop {
+            if let Some(peripheral) = find_cached_peripheral(discovery, peripheral_id).await? {
+                return Ok(Some(peripheral));
+            }
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                return Ok(None);
+            }
+            tokio::time::sleep(poll_interval.min(deadline - now)).await;
+        }
+    }
+    .await;
+    let _ = discovery.stop_discovery_scan().await;
+
+    if let Some(peripheral) = peripheral? {
+        return Ok(peripheral);
+    }
+    if let Some(peripheral) = find_single_recorder_candidate(discovery, hint).await? {
+        return Ok(peripheral);
+    }
+
+    Err(format!("recorder not found: {peripheral_id}"))
+}
+
 async fn scan_recorders_for(
     duration: Duration,
 ) -> Result<Vec<RecorderBleDevice>, String> {
@@ -140,20 +297,25 @@ async fn scan_recorders_for(
 async fn find_peripheral(
     adapter: &Adapter,
     peripheral_id: &str,
+    hint: &RecorderResolveHint,
 ) -> Result<Peripheral, String> {
-    for peripheral in adapter.peripherals().await.map_err(|e| e.to_string())? {
-        if peripheral.id().to_string() == peripheral_id {
-            return Ok(peripheral);
-        }
-    }
-    Err(format!("recorder not found: {peripheral_id}"))
+    let _guard = scan_lock().lock().await;
+    find_peripheral_with_rescan(
+        adapter,
+        peripheral_id,
+        hint,
+        Duration::from_secs(SCAN_SECONDS),
+        Duration::from_millis(RESOLVE_POLL_MS),
+    )
+    .await
 }
 
 async fn connect_and_discover(
     peripheral_id: &str,
+    hint: &RecorderResolveHint,
 ) -> Result<Peripheral, String> {
     let adapter = first_adapter().await?;
-    let peripheral = find_peripheral(&adapter, peripheral_id).await?;
+    let peripheral = find_peripheral(&adapter, peripheral_id, hint).await?;
     if !peripheral.is_connected().await.map_err(|e| e.to_string())? {
         peripheral.connect().await.map_err(|e| e.to_string())?;
     }
@@ -186,8 +348,14 @@ pub async fn ble_scan_recorders() -> Result<Vec<RecorderBleDevice>, String> {
 #[tauri::command]
 pub async fn ble_read_recorder_hello(
     peripheral_id: String,
+    expected_name: Option<String>,
+    expected_rssi: Option<i16>,
 ) -> Result<RecorderHello, String> {
-    let peripheral = connect_and_discover(&peripheral_id).await?;
+    let hint = RecorderResolveHint {
+        name: expected_name,
+        rssi: expected_rssi,
+    };
+    let peripheral = connect_and_discover(&peripheral_id, &hint).await?;
     let result = async {
         let hello_char = find_characteristic(&peripheral, hello_char_uuid())?;
         let bytes = peripheral
@@ -209,6 +377,8 @@ pub async fn ble_read_recorder_hello(
 #[tauri::command]
 pub async fn ble_send_recorder_provisioning(
     peripheral_id: String,
+    expected_name: Option<String>,
+    expected_rssi: Option<i16>,
     provisioning: RecorderProvisioning,
 ) -> Result<(), String> {
     if provisioning.protocol != PROTOCOL {
@@ -217,7 +387,11 @@ pub async fn ble_send_recorder_provisioning(
             provisioning.protocol
         ));
     }
-    let peripheral = connect_and_discover(&peripheral_id).await?;
+    let hint = RecorderResolveHint {
+        name: expected_name,
+        rssi: expected_rssi,
+    };
+    let peripheral = connect_and_discover(&peripheral_id, &hint).await?;
     let result = async {
         let rx_char = find_characteristic(&peripheral, provision_rx_char_uuid())?;
         let payload = serde_json::to_vec(&provisioning).map_err(|e| e.to_string())?;
@@ -237,6 +411,73 @@ pub async fn ble_send_recorder_provisioning(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex as StdMutex;
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct FakePeripheral {
+        id: String,
+        candidate: Option<RecorderCandidate>,
+    }
+
+    #[derive(Debug)]
+    struct FakeDiscovery {
+        before_scan: Vec<FakePeripheral>,
+        after_scan: Vec<FakePeripheral>,
+        scan_starts: StdMutex<usize>,
+        scan_stops: StdMutex<usize>,
+    }
+
+    impl FakeDiscovery {
+        fn new(before_scan: Vec<FakePeripheral>, after_scan: Vec<FakePeripheral>) -> Self {
+            Self {
+                before_scan,
+                after_scan,
+                scan_starts: StdMutex::new(0),
+                scan_stops: StdMutex::new(0),
+            }
+        }
+
+        fn scan_starts(&self) -> usize {
+            *self.scan_starts.lock().unwrap()
+        }
+
+        fn scan_stops(&self) -> usize {
+            *self.scan_stops.lock().unwrap()
+        }
+    }
+
+    impl PeripheralDiscovery for FakeDiscovery {
+        type Peripheral = FakePeripheral;
+
+        async fn discovered_peripherals(&self) -> Result<Vec<Self::Peripheral>, String> {
+            if self.scan_starts() > 0 {
+                Ok(self.after_scan.clone())
+            } else {
+                Ok(self.before_scan.clone())
+            }
+        }
+
+        async fn start_discovery_scan(&self) -> Result<(), String> {
+            *self.scan_starts.lock().unwrap() += 1;
+            Ok(())
+        }
+
+        async fn stop_discovery_scan(&self) -> Result<(), String> {
+            *self.scan_stops.lock().unwrap() += 1;
+            Ok(())
+        }
+
+        fn peripheral_id(peripheral: &Self::Peripheral) -> String {
+            peripheral.id.clone()
+        }
+
+        async fn recorder_candidate(
+            &self,
+            peripheral: &Self::Peripheral,
+        ) -> Result<Option<RecorderCandidate>, String> {
+            Ok(peripheral.candidate.clone())
+        }
+    }
 
     #[test]
     fn recognises_name_or_service_uuid() {
@@ -276,5 +517,199 @@ mod tests {
             provision_frames(&[]).unwrap_err(),
             "provisioning payload cannot be empty"
         );
+    }
+
+    #[test]
+    fn rescans_when_requested_peripheral_is_not_cached() {
+        let discovery = FakeDiscovery::new(
+            vec![],
+            vec![FakePeripheral {
+                id: "recorder-1".to_string(),
+                candidate: Some(RecorderCandidate {
+                    name: Some("LocalLexis Recorder".to_string()),
+                    rssi: Some(-26),
+                }),
+            }],
+        );
+
+        let found = tauri::async_runtime::block_on(find_peripheral_with_rescan(
+            &discovery,
+            "recorder-1",
+            &RecorderResolveHint::default(),
+            Duration::ZERO,
+            Duration::ZERO,
+        ))
+        .unwrap();
+
+        assert_eq!(found.id, "recorder-1");
+        assert_eq!(discovery.scan_starts(), 1);
+        assert_eq!(discovery.scan_stops(), 1);
+    }
+
+    #[test]
+    fn uses_cached_peripheral_without_rescanning() {
+        let discovery = FakeDiscovery::new(
+            vec![FakePeripheral {
+                id: "recorder-1".to_string(),
+                candidate: None,
+            }],
+            vec![],
+        );
+
+        let found = tauri::async_runtime::block_on(find_peripheral_with_rescan(
+            &discovery,
+            "recorder-1",
+            &RecorderResolveHint::default(),
+            Duration::ZERO,
+            Duration::ZERO,
+        ))
+        .unwrap();
+
+        assert_eq!(found.id, "recorder-1");
+        assert_eq!(discovery.scan_starts(), 0);
+        assert_eq!(discovery.scan_stops(), 0);
+    }
+
+    #[test]
+    fn falls_back_to_single_visible_recorder_when_id_changes_after_scan() {
+        let discovery = FakeDiscovery::new(
+            vec![],
+            vec![FakePeripheral {
+                id: "recorder-2".to_string(),
+                candidate: Some(RecorderCandidate {
+                    name: Some("LocalLexis Recorder".to_string()),
+                    rssi: Some(-31),
+                }),
+            }],
+        );
+
+        let found = tauri::async_runtime::block_on(find_peripheral_with_rescan(
+            &discovery,
+            "recorder-1",
+            &RecorderResolveHint {
+                name: Some("LocalLexis Recorder".to_string()),
+                rssi: Some(-26),
+            },
+            Duration::ZERO,
+            Duration::ZERO,
+        ))
+        .unwrap();
+
+        assert_eq!(found.id, "recorder-2");
+        assert_eq!(discovery.scan_starts(), 1);
+        assert_eq!(discovery.scan_stops(), 1);
+    }
+
+    #[test]
+    fn does_not_fallback_to_recorder_with_mismatched_rssi_hint() {
+        let discovery = FakeDiscovery::new(
+            vec![],
+            vec![FakePeripheral {
+                id: "recorder-2".to_string(),
+                candidate: Some(RecorderCandidate {
+                    name: Some("LocalLexis Recorder".to_string()),
+                    rssi: Some(-80),
+                }),
+            }],
+        );
+
+        let err = tauri::async_runtime::block_on(find_peripheral_with_rescan(
+            &discovery,
+            "recorder-1",
+            &RecorderResolveHint {
+                name: Some("LocalLexis Recorder".to_string()),
+                rssi: Some(-26),
+            },
+            Duration::ZERO,
+            Duration::ZERO,
+        ))
+        .unwrap_err();
+
+        assert_eq!(err, "recorder not found: recorder-1");
+        assert_eq!(discovery.scan_starts(), 1);
+        assert_eq!(discovery.scan_stops(), 1);
+    }
+
+    #[test]
+    fn rssi_hint_comparison_handles_extreme_values() {
+        let candidate = RecorderCandidate {
+            name: Some("LocalLexis Recorder".to_string()),
+            rssi: Some(i16::MAX),
+        };
+        let hint = RecorderResolveHint {
+            name: Some("LocalLexis Recorder".to_string()),
+            rssi: Some(i16::MIN),
+        };
+
+        assert!(!candidate_matches_hint(&candidate, &hint));
+    }
+
+    #[test]
+    fn does_not_fallback_without_selected_recorder_hint() {
+        let discovery = FakeDiscovery::new(
+            vec![],
+            vec![FakePeripheral {
+                id: "recorder-2".to_string(),
+                candidate: Some(RecorderCandidate {
+                    name: Some("LocalLexis Recorder".to_string()),
+                    rssi: Some(-26),
+                }),
+            }],
+        );
+
+        let err = tauri::async_runtime::block_on(find_peripheral_with_rescan(
+            &discovery,
+            "recorder-1",
+            &RecorderResolveHint::default(),
+            Duration::ZERO,
+            Duration::ZERO,
+        ))
+        .unwrap_err();
+
+        assert_eq!(err, "recorder not found: recorder-1");
+        assert_eq!(discovery.scan_starts(), 1);
+        assert_eq!(discovery.scan_stops(), 1);
+    }
+
+    #[test]
+    fn does_not_guess_when_multiple_recorders_are_visible_after_scan() {
+        let discovery = FakeDiscovery::new(
+            vec![],
+            vec![
+                FakePeripheral {
+                    id: "recorder-2".to_string(),
+                    candidate: Some(RecorderCandidate {
+                        name: Some("LocalLexis Recorder".to_string()),
+                        rssi: Some(-31),
+                    }),
+                },
+                FakePeripheral {
+                    id: "recorder-3".to_string(),
+                    candidate: Some(RecorderCandidate {
+                        name: Some("LocalLexis Recorder".to_string()),
+                        rssi: Some(-32),
+                    }),
+                },
+            ],
+        );
+
+        let err = tauri::async_runtime::block_on(find_peripheral_with_rescan(
+            &discovery,
+            "recorder-1",
+            &RecorderResolveHint {
+                name: Some("LocalLexis Recorder".to_string()),
+                rssi: Some(-26),
+            },
+            Duration::ZERO,
+            Duration::ZERO,
+        ))
+        .unwrap_err();
+
+        assert_eq!(
+            err,
+            "multiple matching LocalLexis recorders visible (2); scan again and choose one"
+        );
+        assert_eq!(discovery.scan_starts(), 1);
+        assert_eq!(discovery.scan_stops(), 1);
     }
 }

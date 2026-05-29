@@ -229,6 +229,8 @@ export function SettingsScreen() {
     try {
       const hello = await invoke<RecorderHello>('ble_read_recorder_hello', {
         peripheralId: recorder.id,
+        expectedName: recorder.name,
+        expectedRssi: recorder.rssi,
       });
       const minted = await api<PairingToken>('/pair/tokens', { method: 'POST' });
       const info = await api<HubInfo>('/hub/info');
@@ -249,6 +251,8 @@ export function SettingsScreen() {
       });
       await invoke('ble_send_recorder_provisioning', {
         peripheralId: recorder.id,
+        expectedName: recorder.name,
+        expectedRssi: recorder.rssi,
         provisioning,
       });
       setHubInfo(info);
