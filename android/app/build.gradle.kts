@@ -14,8 +14,8 @@ android {
         applicationId = "app.locallexis"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.8.0"
+        versionCode = 3
+        versionName = "0.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -81,11 +81,27 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.core)
 
-    implementation(libs.lazysodium.android)
+    implementation(libs.lazysodium.android) {
+        // lazysodium-android pulls JNA as a plain jar (desktop natives only).
+        // Drop it so only the @aar below remains — same classes plus
+        // libjnidispatch.so for Android ABIs. Without this the first native
+        // libsodium call crashes at runtime ("com.sun.jna...").
+        exclude(group = "net.java.dev.jna", module = "jna")
+    }
+    // Pinned to the exact version lazysodium-android 5.1.0 resolves (5.12.1)
+    // so JNA's Java and native dispatch versions match.
+    implementation("net.java.dev.jna:jna:5.12.1@aar")
     implementation(libs.androidx.security.crypto)
 
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
+
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.barcode.scanning)
+
+    implementation(libs.androidx.work.runtime.ktx)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 
@@ -97,4 +113,5 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.lazysodium.java)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.okhttp.tls)
 }

@@ -20,6 +20,13 @@ import java.util.Base64
  * returns null), the request is passed through unsigned. Callers that
  * need to enforce signed-only flows should gate at a higher layer.
  */
+/**
+ * OkHttp request tag opting a request into large-body signing (audio uploads).
+ * Attach with `.tag(SignLargeBody::class.java, SignLargeBody)`. Client-side
+ * only — never sent over the wire.
+ */
+object SignLargeBody
+
 class SignedRequestInterceptor(
     private val cryptoBox: CryptoBox,
     private val deviceIdentityStore: DeviceIdentityStore,
@@ -30,7 +37,12 @@ class SignedRequestInterceptor(
             ?: return chain.proceed(chain.request())
 
         val request = chain.request()
-        val bodyBytes = request.body.toSignedBytes()
+        val maxBody = if (request.tag(SignLargeBody::class.java) != null) {
+            MAX_UPLOAD_BODY_BYTES
+        } else {
+            MAX_SIGNED_BODY_BYTES
+        }
+        val bodyBytes = request.body.toSignedBytes(maxBody)
 
         val timestamp = (System.currentTimeMillis() / 1000L).toString()
         val nonce = randomNonce()
@@ -55,7 +67,7 @@ class SignedRequestInterceptor(
     }
 
     @Throws(IOException::class)
-    private fun RequestBody?.toSignedBytes(): ByteArray {
+    private fun RequestBody?.toSignedBytes(maxBytes: Long): ByteArray {
         val body = this ?: return EMPTY
         if (body.isOneShot()) {
             throw IOException("Cannot sign one-shot request body")
@@ -64,9 +76,9 @@ class SignedRequestInterceptor(
         if (length < 0) {
             throw IOException("Cannot sign request body with unknown length")
         }
-        if (length > MAX_SIGNED_BODY_BYTES) {
+        if (length > maxBytes) {
             throw IOException(
-                "Signed request body too large: $length > $MAX_SIGNED_BODY_BYTES bytes",
+                "Signed request body too large: $length > $maxBytes bytes",
             )
         }
         return body.let {
@@ -81,6 +93,11 @@ class SignedRequestInterceptor(
         val EMPTY = ByteArray(0)
         val RANDOM = SecureRandom()
         const val MAX_SIGNED_BODY_BYTES = 1_048_576L
+
+        // Whole-file audio uploads are signed over the full body (the hub's
+        // verify_device_signature covers the raw bytes), so the upload path
+        // opts past the small-request cap up to the hub's own 256 MiB limit.
+        const val MAX_UPLOAD_BODY_BYTES = 256L * 1024 * 1024
 
         fun randomNonce(): String {
             val bytes = ByteArray(16)

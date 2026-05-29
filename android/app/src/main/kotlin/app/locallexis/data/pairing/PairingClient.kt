@@ -3,6 +3,7 @@ package app.locallexis.data.pairing
 import app.locallexis.data.crypto.CryptoBox
 import app.locallexis.data.crypto.SealedBoxOpenException
 import app.locallexis.data.crypto.WorkspaceKeyStore
+import app.locallexis.data.http.HubTls
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -53,8 +54,11 @@ class PairingClient(
                 .post(body.toRequestBody(JSON_MEDIA_TYPE))
                 .build()
 
+            // Pin the pairing POST to the SPKI carried in the QR (trust on
+            // first use). For plain-http hubs this is the base client.
+            val client = HubTls.pinnedClient(httpClient, payload.hubUrl, payload.tlsSpkiB64)
             val response = try {
-                httpClient.newCall(request).execute()
+                client.newCall(request).execute()
             } catch (e: IOException) {
                 throw PairingFailedException(0, "network error: ${e.message}")
             }

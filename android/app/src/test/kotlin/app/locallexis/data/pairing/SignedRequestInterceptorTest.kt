@@ -139,6 +139,26 @@ class SignedRequestInterceptorTest {
     }
 
     @Test
+    fun signsLargeBodyWhenTaggedForUpload() {
+        server.enqueue(MockResponse().setResponseCode(202).setBody("{}"))
+
+        // 2 MiB exceeds the 1 MiB small-request cap; the upload tag lifts it.
+        val body = ByteArray(2 * 1024 * 1024) { 7 }.toRequestBody()
+        val req = Request.Builder()
+            .url(server.url("/jobs/upload?filename=rec.m4a"))
+            .post(body)
+            .tag(SignLargeBody::class.java, SignLargeBody)
+            .build()
+
+        http.newCall(req).execute().close()
+
+        val recorded = server.takeRequest()
+        assertEquals("dev_abc", recorded.getHeader("X-Device-Id"))
+        assertNotNull("large tagged body is signed", recorded.getHeader("X-Signature-B64"))
+        assertEquals(2 * 1024 * 1024, recorded.bodySize.toInt())
+    }
+
+    @Test
     fun unregisteredDeviceSkipsSigning() {
         val unidentified = InMemoryDeviceIdentityStore()
         val unsignedHttp = OkHttpClient.Builder()

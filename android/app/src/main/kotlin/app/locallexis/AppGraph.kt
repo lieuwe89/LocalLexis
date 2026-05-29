@@ -13,6 +13,7 @@ import app.locallexis.data.crypto.LazysodiumCryptoBox
 import app.locallexis.data.crypto.SecretStorage
 import app.locallexis.data.crypto.WorkspaceKeyStore
 import app.locallexis.data.db.LocalLexisDatabase
+import app.locallexis.data.http.HubTls
 import app.locallexis.data.pairing.DeviceIdentityStore
 import app.locallexis.data.pairing.PairingClient
 import app.locallexis.data.pairing.PairingPayloadV1
@@ -77,17 +78,29 @@ class AppGraph(context: Context) {
      */
     val pair: suspend (PairingPayloadV1, String) -> PairingResult = { payload, name ->
         pairingClient.exchange(payload, name).also { result ->
-            hubConfig.put(hubUrl = payload.hubUrl, workspaceId = result.workspaceId)
+            hubConfig.put(
+                hubUrl = payload.hubUrl,
+                workspaceId = result.workspaceId,
+                tlsSpkiB64 = payload.tlsSpkiB64,
+            )
         }
     }
 
     /** Real sync when paired, else a fallback that surfaces "not paired". */
     fun librarySync(): LibrarySync {
         val base = hubConfig.getHubUrl() ?: return UnpairedLibrarySync
-        return DefaultLibrarySync(SyncClient(okHttp, base), SyncIngest(db))
+        val client = HubTls.pinnedClient(okHttp, base, hubConfig.getTlsSpkiB64())
+        return DefaultLibrarySync(SyncClient(client, base), SyncIngest(db))
     }
 
     fun workspaceId(): String = hubConfig.getWorkspaceId() ?: ""
+
+    /** Wipe all pairing state: hub coordinates, workspace key W, device id. */
+    fun unpair() {
+        hubConfig.clear()
+        workspaceKeyStore.clear()
+        deviceIdentityStore.clear()
+    }
 
     companion object {
         private const val SECURE_FILE = "locallexis_secure"
