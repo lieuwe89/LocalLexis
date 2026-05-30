@@ -1,14 +1,25 @@
 # Live I2S Capture for the LocalLexis ESP32 Recorder
 
 Date: 2026-05-30
-Status: Draft — pending user review
+Status: Draft — **blocked on `protocol-v2-body-hash-signing` spec landing first**
 Hardware: Waveshare ESP32-S3-ePaper-1.54 V2 (ESP32-S3-PICO-1 N8R8) with onboard ES8311 audio codec.
+
+## 0. Dependency
+
+This spec depends on a separate `protocol-v2-body-hash-signing` spec (to be written next). That spec changes the signed-request protocol so the signature covers `sha256(body)` instead of body bytes directly. Without that change, the firmware cannot upload payloads larger than what fits in a single PSRAM `std::vector<uint8_t>` (~32 MiB), because both `Ed25519::sign` (firmware) and `await request.body()` (hub) need the full message buffer in RAM. Meeting-length recordings (60+ min ≈ 115 MiB) are unreachable without the protocol change.
+
+Once protocol-v2 lands:
+- Firmware `signRequestB64` signs a small fixed message containing the body's SHA-256 digest, not the body itself.
+- `SignedHttpClient::uploadWav` accepts a `BodySource` and streams the body (hash pass, send pass) without buffering.
+- `SdQueue` drain reads files chunk-by-chunk through the same `BodySource` interface.
+
+This spec assumes that uploader is available, and integrates against it for the SD-path 256 MiB cap. The `BodySource` interface, the streaming refactor of `SignedHttpClient::uploadWav`, the chunked SHA-256 hashing, and the `SdQueue` `peekOldestPath`/`openReader` additions all live in the protocol-v2 spec, not here.
 
 ## 1. Goal
 
 Replace the demo silent-WAV generator in the recorder firmware with a real audio capture path. After this spec lands, tapping the BOOT button starts an actual microphone recording, tapping again stops it, and the resulting WAV is uploaded to the hub (queued through SD when present, sent directly when not). A small ePaper plus LED UI tells the user whether the device is in `STANDBY`, `RECORDING`, or `FULL` state.
 
-The change also fixes a known gap flagged in `firmware/esp32-recorder/README.md`: the SD drain path currently loads each queued file into RAM as a `std::vector<uint8_t>`, which caps usable recording length far below the SD card's capacity. The streaming refactor in this spec lifts that cap to whatever the hub will accept.
+The 256 MiB SD-path cap, the no-SD 4 MiB cap, and the `FULL — tap to start a new recording` handling all depend on the streaming uploader delivered by the protocol-v2 spec; implementation here is blocked until that uploader exists.
 
 ## 2. Locked decisions
 
@@ -22,7 +33,7 @@ The change also fixes a known gap flagged in `firmware/esp32-recorder/README.md`
 | Per-file size cap (SD present) | 256 MiB (matches hub default `DEFAULT_MAX_UPLOAD_BYTES`) |
 | Per-file size cap (no SD) | 4 MiB (safe contiguous PSRAM allocation) |
 | Cap-hit behavior | Stop recording, render `FULL — tap to start a new recording`, next tap begins a fresh clip |
-| Upload path | New `BodySource`-based streaming `SignedHttpClient::uploadWav`, two-pass body (hash, send) |
+| Upload path | Streaming `SignedHttpClient::uploadWav(BodySource&)` — **delivered by the protocol-v2 spec**, consumed here |
 | No-SD multi-clip storage | Single-slot `std::optional<PendingClip>`; second clip while first is uploading is dropped with a serial warning |
 
 ## 3. Scope
@@ -32,13 +43,21 @@ The change also fixes a known gap flagged in `firmware/esp32-recorder/README.md`
 - Live I2S audio capture via the onboard ES8311 codec
 - Streaming SD writer with header-patch-on-close (`WavFileSink`)
 - PSRAM RAM-buffer writer (`WavMemorySink`) for the no-SD path
-- Streaming upload refactor of `SignedHttpClient::uploadWav` (new `BodySource` interface)
-- Bumping `SdQueue` cap from 4 MiB to 256 MiB
+- Bumping `SdQueue` cap from 4 MiB to 256 MiB (depends on protocol-v2 drain refactor existing)
 - BOOT button toggle with debounce
 - LED + ePaper recording-state UI
 - `FULL` cap-hit handling on both storage paths
-- New host-side unit tests for `WavWriter`, `RecordingSession`, and `BodySource`/SHA-256 streaming
+- New host-side unit tests for `WavWriter` and `RecordingSession`
+- Wiring `RecordingSession` outputs into the protocol-v2 `BodySource`-based uploader
 - One-time fix: drop a queued file on hub 4xx response instead of retrying forever
+
+### Delivered by protocol-v2 (not in this spec)
+
+- `BodySource` interface and its file-backed and vector-backed implementations
+- Streaming `SignedHttpClient::uploadWav(BodySource&)` (two-pass body, chunked SHA-256, single fixed-size signed message)
+- `SdQueue::peekOldestPath` + `openReader(path)` streaming reader (replaces the RAM-loaded `peekOldest`)
+- Chunked SHA-256 host tests
+- Hub-side body-hash verification, Android signer change, desktop signer change
 
 ### Out of scope (deferred)
 
@@ -68,9 +87,9 @@ The work splits into six new modules and four modified ones. Each module has one
 
 ### 4.2 Modified existing modules
 
-- **`net/SignedHttpClient.{h,cpp}`** — Add a `BodySource` interface with `size()`, `readChunk(buf, max)`, and `rewind()`. New `uploadWav(provisioning, keys, filename, BodySource&, response)` overload uses a two-pass body: pass 1 computes SHA-256 in 4 KB chunks for the signature, pass 2 streams the body bytes directly to HTTPS. The existing `uploadWav(... std::vector<uint8_t>&)` overload becomes a thin wrapper that adapts a vector to a `VectorBodySource`.
-- **`storage/SdQueue.{h,cpp}`** — Bump `kMaxFileBytes` from 4 MiB to 256 MiB. Add `openWriter(outPath)` returning an `SdFileWriter` for `WavFileSink` to use. Replace `peekOldest(outPath, outBytes)` with two calls: `peekOldestPath(outPath)` and `openReader(path)` returning an `SdFileBodySource`. `removeFile` and boot-time `.partial` cleanup unchanged.
-- **`main.cpp`** — Replace `enqueueDemoOnce` and `uploadDemoWavOnce` with: instantiate `Es8311Codec`, `I2SCapture`, `RecordingSession`, `BootButton`, `RecorderUi`; wire `BootButton.onTap → RecordingSession.toggle`; wire `RecordingSession.onClipReady → upload-or-enqueue`. The silent-demo path is preserved behind `#ifdef LOCALLEXIS_DEMO_SILENT_WAV` for mic-less smoke tests.
+- **`net/SignedHttpClient.{h,cpp}`** — No changes in this spec. The streaming `uploadWav(BodySource&)` overload arrives via protocol-v2; this spec consumes it.
+- **`storage/SdQueue.{h,cpp}`** — Bump `kMaxFileBytes` from 4 MiB to 256 MiB. Add `openWriter(outPath)` returning an `SdFileWriter` for `WavFileSink` to use. (`peekOldestPath` + `openReader` are added by protocol-v2.) `removeFile` and boot-time `.partial` cleanup unchanged.
+- **`main.cpp`** — Replace `enqueueDemoOnce` and `uploadDemoWavOnce` with: instantiate `Es8311Codec`, `I2SCapture`, `RecordingSession`, `BootButton`, `RecorderUi`; wire `BootButton.onTap → RecordingSession.toggle`; wire `RecordingSession.onClipReady → upload-or-enqueue` (the upload-or-enqueue function uses the protocol-v2 streaming uploader). The silent-demo path is preserved behind `#ifdef LOCALLEXIS_DEMO_SILENT_WAV` for mic-less smoke tests.
 - **`include/LocalLexisConfig.h`** — Add `LOCALLEXIS_AUDIO_*` defines: sample rate (16000), bit depth (16), Audio_PWR (42), I2S pin assignments (BCLK / LRCK / SDIN, and MCLK if needed — exact GPIOs resolved during the plan phase), no-SD cap (4 MiB), SD cap (256 MiB).
 - **`platformio.ini`** — Move `GxEPD2` and `Adafruit GFX Library` from the `hello-screen` env's `lib_deps` into the main `waveshare-esp32-s3-epaper` env. Drop the now-redundant override in `hello-screen`.
 
@@ -137,19 +156,14 @@ Same as 5.4 with two differences:
 
 ### 5.6 Upload (background, runs in main loop)
 
-Replaces `drainQueueStep`:
+The streaming uploader and `BodySource` adapters are delivered by protocol-v2. This spec is responsible only for wiring `RecordingSession`'s outputs into them:
 
 1. Each loop tick: check provisioned + Wi-Fi connected + (`SdQueue` has files OR pending in-memory clip).
-2. **SD path:** `SdQueue::peekOldestPath(outPath)` returns the next file path without reading it. `SdQueue::openReader(path)` returns an `SdFileBodySource`.
-3. **No-SD path:** the pending `std::vector<uint8_t>` is wrapped in a `VectorBodySource`.
-4. `SignedHttpClient::uploadWav(provisioning, keys, filename, source, response)`:
-   - **Pass 1:** `source.rewind()`. Read in 4 KB chunks into a SHA-256 hasher. End → 32-byte digest.
-   - Build canonical signature string with the digest. Sign with Ed25519 key.
-   - Open HTTPS connection to hub (TLS SPKI verified, unchanged). Send request line and signed headers, including `Content-Length` from `source.size()`.
-   - **Pass 2:** `source.rewind()`. Read in 4 KB chunks, write each directly to the TLS body stream. No intermediate buffer.
-   - Read response.
+2. **SD path:** call protocol-v2's `SdQueue::peekOldestPath(outPath)` and `SdQueue::openReader(path)` to obtain a `SdFileBodySource`.
+3. **No-SD path:** wrap the pending `std::vector<uint8_t>` in protocol-v2's `VectorBodySource`.
+4. Call protocol-v2's streaming `SignedHttpClient::uploadWav(provisioning, keys, filename, source, response)`. Internals (hash pass, send pass, signature shape) are protocol-v2's concern.
 5. On 202: `SdQueue::removeFile(path)` for SD path, or clear pending slot for no-SD path. Continue draining.
-6. On 4xx (new behavior): log status, delete the file (or clear the pending slot), continue to next. Retrying won't help.
+6. On 4xx (new behavior added by this spec): log status, delete the file (or clear the pending slot), continue to next. Retrying won't help.
 7. On 5xx or network error: leave the file/slot in place, back off (existing 2 s delay), retry on the next drain tick.
 
 ### 5.7 Cross-path invariant
@@ -220,11 +234,7 @@ Mocks `WavSink`, `Es8311Codec`, `I2SCapture`, and `BootButton` behind narrow abs
 - `STANDBY → toggle (codec init fails) → STANDBY` — sink closed and discarded.
 - `sd_present_at_start_picks_file_sink` and `sd_absent_picks_memory_sink` — sink choice is stable for the session.
 
-**`test/host/test_signed_http_client_body_source.cpp` (new)**
-- `vector_body_source_two_pass_returns_same_bytes` — rewind plus re-read returns identical chunks.
-- `vector_body_source_size_matches_payload`.
-- `sha256_over_chunks_matches_sha256_over_whole` — chunked hashing produces the same digest as single-shot. If this breaks, signatures stop verifying.
-- A `MockBodySource` returns a fixed chunk sequence to exercise chunked SHA without files or vectors.
+`BodySource`-related host tests live in the protocol-v2 spec, not here.
 
 **`test/host/test_provisioning_protocol.cpp` (existing)** and **`test/host/test_hub_url.cpp` (existing)** — untouched.
 
@@ -259,10 +269,11 @@ If any item fails, the spec phase didn't capture something and we revisit before
 
 These do not block the spec but must be resolved before code is written:
 
-1. **Exact I2S pin assignments** (BCLK, LRCK, SDIN, and whether the codec needs an external MCLK from the ESP32). Authoritative source: the Waveshare reference firmware repository (`github:waveshareteam/ESP32-S3-ePaper-1.54`, `port_bsp` / `port_audio` components). The plan phase will check that source and pin these down.
-2. **ES8311 I2C address and exact register sequence for mono 16 kHz ADC.** Same authoritative source. Default address is `0x18`, but cross-check.
-3. **DMA buffer sizing.** The 8 × 1024 frames choice is a starting point. The plan phase may revise after measuring real codec interrupt cadence.
-4. **`pio test -e native` env setup.** The existing host tests use a native environment; confirm the new tests link cleanly against the same harness without pulling in Arduino headers.
+1. **Protocol-v2 spec must land first.** Without it, this spec cannot deliver the 256 MiB cap behavior or stream multi-MB uploads. See Section 0.
+2. **Exact I2S pin assignments** (BCLK, LRCK, SDIN, and whether the codec needs an external MCLK from the ESP32). Authoritative source: the Waveshare reference firmware repository (`github:waveshareteam/ESP32-S3-ePaper-1.54`, `port_bsp` / `port_audio` components). The plan phase will check that source and pin these down.
+3. **ES8311 I2C address and exact register sequence for mono 16 kHz ADC.** Same authoritative source. Default address is `0x18`, but cross-check.
+4. **DMA buffer sizing.** The 8 × 1024 frames choice is a starting point. The plan phase may revise after measuring real codec interrupt cadence.
+5. **Host-test build mechanism.** The existing `test/host/` files use plain `<cassert>` and a manual `int main` — confirm there is a working build path (`platformio.ini` has no `[env:native]` entry yet) and add one if needed, before the new host tests can be exercised in CI.
 
 ## 9. References
 
