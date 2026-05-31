@@ -3,13 +3,33 @@
 #include <cstring>
 #include <iostream>
 #include <numeric>
+#include <memory>
 #include <vector>
 
 #include "net/VectorBodySource.h"
+#include "storage/FileLike.h"
+#include "storage/SdFileBodySource.h"
 
 using locallexis::net::VectorBodySource;
 
 namespace {
+
+class FakeFileLike : public locallexis::storage::FileLike {
+public:
+    explicit FakeFileLike(std::vector<uint8_t> bytes) : bytes_(std::move(bytes)) {}
+    size_t size() const override { return bytes_.size(); }
+    bool seekToStart() override { cursor_ = 0; return true; }
+    size_t read(uint8_t* buf, size_t max) override {
+        if (cursor_ >= bytes_.size() || max == 0) return 0;
+        const size_t take = std::min(max, bytes_.size() - cursor_);
+        std::memcpy(buf, bytes_.data() + cursor_, take);
+        cursor_ += take;
+        return take;
+    }
+private:
+    std::vector<uint8_t> bytes_;
+    size_t cursor_ = 0;
+};
 
 std::vector<uint8_t> drain(VectorBodySource& src, size_t chunkSize) {
     std::vector<uint8_t> out;
@@ -72,6 +92,39 @@ void test_zero_max_returns_zero_without_advancing() {
     assert(rest == bytes);
 }
 
+void test_sd_file_body_source_round_trip() {
+    std::vector<uint8_t> bytes(513);
+    for (size_t i = 0; i < bytes.size(); ++i) {
+        bytes[i] = static_cast<uint8_t>((i * 7) & 0xff);
+    }
+    auto fake = std::make_unique<FakeFileLike>(bytes);
+    locallexis::storage::SdFileBodySource src(std::move(fake));
+    assert(src.size() == bytes.size());
+
+    std::vector<uint8_t> got;
+    std::vector<uint8_t> buf(64);
+    while (true) {
+        const size_t n = src.readChunk(buf.data(), buf.size());
+        if (n == 0) break;
+        got.insert(got.end(), buf.begin(), buf.begin() + n);
+    }
+    assert(got == bytes);
+}
+
+void test_sd_file_body_source_rewind() {
+    std::vector<uint8_t> bytes = {10, 20, 30, 40};
+    auto fake = std::make_unique<FakeFileLike>(bytes);
+    locallexis::storage::SdFileBodySource src(std::move(fake));
+    uint8_t buf[2];
+    src.readChunk(buf, 2);
+    assert(src.rewind());
+    std::vector<uint8_t> got;
+    uint8_t buf2[8];
+    const size_t n = src.readChunk(buf2, sizeof(buf2));
+    got.assign(buf2, buf2 + n);
+    assert(got == bytes);
+}
+
 }  // namespace
 
 int main() {
@@ -80,6 +133,8 @@ int main() {
     test_rewind_replays_from_start();
     test_empty_body();
     test_zero_max_returns_zero_without_advancing();
+    test_sd_file_body_source_round_trip();
+    test_sd_file_body_source_rewind();
     std::cout << "test_body_source: OK" << std::endl;
     return 0;
 }

@@ -30,7 +30,7 @@ test_hub_url: test_hub_url.cpp ../../src/net/HubUrl.cpp
 test_sign_v2: test_sign_v2.cpp ../../src/crypto/SignedMessage.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-test_body_source: test_body_source.cpp ../../src/net/VectorBodySource.cpp
+test_body_source: test_body_source.cpp ../../src/net/VectorBodySource.cpp ../../src/storage/SdFileBodySource.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 clean:
