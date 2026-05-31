@@ -122,4 +122,4 @@ direct in-memory demo upload so single-shot smoke tests still work.
 - Live I2S capture and e-paper UI are not implemented yet.
 - HTTPS uploads require the provisioned TLS SPKI pin and verify it before audio bytes are sent.
 - The sealed workspace key is stored as received; the firmware does not need to unseal it for signed upload, but future encrypted sync features may.
-- The drain path loads each queued file fully into RAM; replace with a streaming `SignedHttpClient` once capture lands so multi-MB clips don't blow the heap.
+- Protocol v2 (sha256(body) signing + streaming upload, gated by `LOCALLEXIS_PROTO_VERSION=2`): one-hour 16 kHz mono 16-bit recordings upload through a 4 KB streaming buffer with no full-body allocation. The drain path streams queued files chunk-by-chunk via `SdQueue::openReader` + `SignedHttpClient::uploadWav(BodySource&)`; multi-MB clips no longer load fully into RAM.
