@@ -29,11 +29,14 @@ def signed_headers(
     ``path`` may include a ``?query`` — it is split and folded into the
     signed message exactly as the server reconstructs it from the URL.
     """
+    import hashlib
+
     raw_body = body if isinstance(body, (bytes, bytearray)) else body.encode("utf-8")
     ts = str(int(time.time())) if timestamp is None else str(timestamp)
     nc = secrets.token_hex(8) if nonce is None else nonce
     p, _, q = path.partition("?")
-    msg = build_signed_message(method, p, q, ts, nc, raw_body)
+    body_sha256 = hashlib.sha256(raw_body).digest()
+    msg = build_signed_message(method, p, q, ts, nc, body_sha256)
     sig = sk.sign(msg).signature
     return {
         "X-Device-Id": device_id,

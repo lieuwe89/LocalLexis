@@ -1,6 +1,6 @@
 """Device-signed request verification.
 
-Wire protocol (v1)
+Wire protocol (v2)
 ------------------
 
 Each request from a paired device carries four headers::
@@ -12,15 +12,22 @@ Each request from a paired device carries four headers::
 
 The signature is computed over the message::
 
-    HTTP_METHOD + "\\n"
+    "locallexis-sig-v2" + "\\n"
+        + HTTP_METHOD + "\\n"
         + PATH ["?" QUERY] + "\\n"
         + X-Timestamp + "\\n"
         + X-Nonce + "\\n"
-        + raw_body_bytes
+        + sha256(raw_body_bytes)        # 32 raw digest bytes, not hex
 
 with the device's Ed25519 signing key (see :func:`build_signed_message`).
 The hub looks the device up by id, fetches the stored verify key,
 rebuilds the same message, and calls :meth:`nacl.signing.VerifyKey.verify`.
+
+The domain tag ``locallexis-sig-v2`` pins the protocol version *inside*
+the signed bytes, so a man-in-the-middle cannot strip or downgrade it.
+The body is signed as a fixed-size SHA-256 digest, which keeps the
+signed message ~90 bytes regardless of body size — meeting-length
+audio uploads stream through a single hashing pass.
 
 Replay protection: the timestamp must be within ``_SIGNATURE_WINDOW_S``
 of the hub clock, and the ``(device_id, nonce)`` pair must be unseen
@@ -35,7 +42,8 @@ Failure modes
   ``X-Nonce``: 401 + structured detail.
 - Timestamp outside the allowed window: 401 ``stale request``.
 - Device id not in registry: 401 ``unknown device``.
-- Signature does not verify: 401 ``signature verification failed``.
+- Signature does not verify (bad sig OR tampered body → digest mismatch):
+  401 ``signature verification failed``.
 - ``(device_id, nonce)`` already seen this window: 401 ``replay detected``.
 
 Side effects on success
@@ -60,23 +68,38 @@ _SIGNATURE_WINDOW_S = 300.0
 
 
 def build_signed_message(
-    method: str, path: str, query: str, timestamp: str, nonce: str, body: bytes
+    method: str,
+    path: str,
+    query: str,
+    timestamp: str,
+    nonce: str,
+    body_sha256: bytes,
 ) -> bytes:
-    """Canonical bytes a device signs and the hub verifies.
+    """Canonical v2 bytes a device signs and the hub verifies.
 
-    Layout ``METHOD\\nTARGET\\nTIMESTAMP\\nNONCE\\nBODY`` where TARGET is
-    ``path`` plus ``?query`` when a query string is present. Body is last so
-    it may contain newlines unambiguously. Including the query string means a
-    captured request cannot have its path/query parameters tampered with.
+    Layout::
+
+        locallexis-sig-v2\\nMETHOD\\nTARGET\\nTIMESTAMP\\nNONCE\\nSHA256(BODY)
+
+    TARGET is ``path`` plus ``?query`` when a query string is present. The
+    body digest (32 raw bytes, not hex) lets the signature stay one-shot
+    over a fixed ~90-byte message even when the body is gigabytes. The
+    domain tag pins the protocol version inside the signed bytes so it
+    cannot be downgraded by header tampering.
     """
+    if len(body_sha256) != 32:
+        raise ValueError(
+            f"body_sha256 must be 32 bytes, got {len(body_sha256)}"
+        )
     target = path if not query else f"{path}?{query}"
     return b"\n".join(
         (
+            b"locallexis-sig-v2",
             method.encode("ascii"),
             target.encode("ascii"),
             timestamp.encode("ascii"),
             nonce.encode("ascii"),
-            body,
+            body_sha256,
         )
     )
 
@@ -109,22 +132,21 @@ class NonceCache:
             return True
 
 
-async def verify_device_signature(request: Request) -> str:
-    """FastAPI dependency. Returns the verified device_id.
+async def verify_device_signature_with_digest(
+    request: Request, body_sha256: bytes
+) -> str:
+    """Verify the v2 signature given a precomputed body digest.
 
-    Usage::
+    Shared verification core used by:
+    - small-body endpoints via :func:`verify_device_signature` (which
+      reads the body and hashes it for the caller);
+    - the streaming ``/jobs/upload`` route, which hashes the body in a
+      single pass and calls this helper directly so the full body is
+      never resident.
 
-        @router.patch(
-            "/transcripts/{tid}",
-            response_model=PatchResult,
-        )
-        def patch_transcript(
-            tid: str,
-            body: PatchOpBody,
-            request: Request,
-            device_id: str = Depends(verify_device_signature),
-        ) -> PatchResult:
-            ...
+    Returns the verified ``device_id``; raises ``HTTPException(401)`` on
+    any failure (missing header, stale timestamp, unknown device, bad
+    signature, replayed nonce).
     """
     from nacl.exceptions import BadSignatureError
     from nacl.signing import VerifyKey
@@ -139,8 +161,6 @@ async def verify_device_signature(request: Request) -> str:
             detail="missing X-Device-Id / X-Signature-B64 / X-Timestamp / X-Nonce header",
         )
 
-    # Reject stale/early requests before any crypto: once a captured
-    # request's timestamp ages past the window it can never be replayed.
     try:
         ts = float(timestamp)
     except ValueError:
@@ -152,7 +172,6 @@ async def verify_device_signature(request: Request) -> str:
 
     registry = getattr(request.app.state, "device_registry", None)
     if registry is None:
-        # Misconfiguration; surface clearly so deployers see it.
         raise HTTPException(
             status_code=500, detail="device registry not configured"
         )
@@ -166,14 +185,13 @@ async def verify_device_signature(request: Request) -> str:
     except Exception:
         raise HTTPException(status_code=401, detail="bad signature encoding")
 
-    body = await request.body()
     message = build_signed_message(
         request.method,
         request.url.path,
         request.url.query,
         timestamp,
         nonce,
-        body,
+        body_sha256,
     )
 
     try:
@@ -187,8 +205,6 @@ async def verify_device_signature(request: Request) -> str:
             status_code=401, detail=f"signature check error: {exc}"
         )
 
-    # Signature is valid → enforce single use. Done only after verification
-    # so an unauthenticated caller cannot flood the nonce cache.
     nonce_cache = getattr(request.app.state, "nonce_cache", None)
     if nonce_cache is not None and not nonce_cache.check_and_store(device_id, nonce):
         raise HTTPException(
@@ -198,3 +214,17 @@ async def verify_device_signature(request: Request) -> str:
     registry.update_last_seen(device_id)
     request.state.device_id = device_id
     return device_id
+
+
+async def verify_device_signature(request: Request) -> str:
+    """FastAPI dependency. Reads the request body, hashes it, verifies.
+
+    Use for small-body endpoints (``/sync/*``, ``PATCH /transcripts/{tid}``).
+    Endpoints that need streaming (``/jobs/upload``) should hash the body
+    in their own loop and call :func:`verify_device_signature_with_digest`.
+    """
+    import hashlib
+
+    body = await request.body()
+    body_sha256 = hashlib.sha256(body).digest()
+    return await verify_device_signature_with_digest(request, body_sha256)
