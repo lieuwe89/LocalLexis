@@ -5,6 +5,7 @@ import os
 import re
 import threading
 import weakref
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -112,11 +113,36 @@ class BearerAuthMiddleware:
         await self.app(scope, receive, send)
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # Trigger the macOS mic permission prompt at app launch instead of
+    # when the user clicks Record, so the first recording isn't missing
+    # its opening seconds while the user is dismissing a dialog.
+    warm_microphone_in_background()
+    # Reconcile the library index with what is actually on disk. Runs
+    # in a background thread so a large library does not delay /health.
+    threading.Thread(
+        target=app.state.library_db.sync_dirs,
+        args=(list(app.state.library_dirs),),
+        daemon=True,
+    ).start()
+    # Streaming /jobs/upload writes a <random>.partial scratch file
+    # while it hashes; a crash mid-stream would leak it indefinitely.
+    removed = sweep_partial_uploads(Path(app.state.incoming_dir))
+    if removed:
+        import logging
+
+        logging.getLogger("speechtotext.api").info(
+            "swept %d orphan partial upload(s) at startup", removed
+        )
+    yield
+
+
 def create_app(
     library_db_path: Path | None = None,
     devices_db_path: Path | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="LocalLexis", version=__version__)
+    app = FastAPI(title="LocalLexis", version=__version__, lifespan=_lifespan)
     # Order matters: middleware added LAST runs OUTERMOST, so CORS must be
     # added after auth — that way 401 responses still carry CORS headers and
     # the browser surfaces them as auth errors rather than CORS errors.
@@ -192,28 +218,5 @@ def create_app(
     @app.get("/health")
     def health() -> dict:
         return {"ok": True}
-
-    @app.on_event("startup")
-    def _on_startup() -> None:
-        # Trigger the macOS mic permission prompt at app launch instead of
-        # when the user clicks Record, so the first recording isn't missing
-        # its opening seconds while the user is dismissing a dialog.
-        warm_microphone_in_background()
-        # Reconcile the library index with what is actually on disk. Runs
-        # in a background thread so a large library does not delay /health.
-        threading.Thread(
-            target=app.state.library_db.sync_dirs,
-            args=(list(app.state.library_dirs),),
-            daemon=True,
-        ).start()
-        # Streaming /jobs/upload writes a <random>.partial scratch file
-        # while it hashes; a crash mid-stream would leak it indefinitely.
-        removed = sweep_partial_uploads(Path(app.state.incoming_dir))
-        if removed:
-            import logging
-
-            logging.getLogger("speechtotext.api").info(
-                "swept %d orphan partial upload(s) at startup", removed
-            )
 
     return app
