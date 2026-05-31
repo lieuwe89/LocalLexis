@@ -111,12 +111,21 @@ bool provisionWithPairingToken(
         return false;
     }
 
-    const int bodyStart = response.indexOf('\n');
-    const String responseBody = bodyStart >= 0 ? response.substring(bodyStart + 1) : "";
+    // Extract the JSON object by braces rather than assuming the body starts
+    // right after the status line. A real hub (uvicorn) reached across a NAT /
+    // proxy hop can prepend chunk-size framing or whitespace, which the naive
+    // "everything after the first newline" slice handed to ArduinoJson as
+    // non-JSON (DeserializationError InvalidInput). Brace-bounding is robust.
+    const int jsonStart = response.indexOf('{');
+    const int jsonEnd = response.lastIndexOf('}');
+    const String responseBody = (jsonStart >= 0 && jsonEnd > jsonStart)
+        ? response.substring(jsonStart, jsonEnd + 1)
+        : "";
     JsonDocument doc;
     const DeserializationError jsonError = deserializeJson(doc, responseBody);
     if (jsonError) {
-        response = String("invalid pairing response JSON: ") + jsonError.c_str();
+        response = String("invalid pairing response JSON: ") + jsonError.c_str()
+            + " [raw=" + response + "]";
         return false;
     }
 
