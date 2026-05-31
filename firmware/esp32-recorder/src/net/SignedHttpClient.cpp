@@ -11,10 +11,13 @@
 
 #include "crypto/Base64.h"
 #include "net/HubUrl.h"
+#include "net/VectorBodySource.h"
 
 namespace locallexis::net {
 
 namespace {
+constexpr size_t kStreamChunkBytes = 4096;
+
 String unixTimestamp() {
     return String(static_cast<unsigned long>(time(nullptr)));
 }
@@ -67,7 +70,38 @@ int parseStatusCode(const String& statusLine) {
     return code.toInt();
 }
 
-bool writeUploadRequest(
+bool hashBody(BodySource& source, uint8_t digest[32], String& response) {
+    if (!source.rewind()) {
+        response = "failed to rewind body for hashing";
+        return false;
+    }
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+    if (mbedtls_sha256_starts_ret(&ctx, 0) != 0) {
+        mbedtls_sha256_free(&ctx);
+        response = "mbedtls_sha256_starts_ret failed";
+        return false;
+    }
+    uint8_t buf[kStreamChunkBytes];
+    while (true) {
+        const size_t n = source.readChunk(buf, sizeof(buf));
+        if (n == 0) break;
+        if (mbedtls_sha256_update_ret(&ctx, buf, n) != 0) {
+            mbedtls_sha256_free(&ctx);
+            response = "mbedtls_sha256_update_ret failed";
+            return false;
+        }
+    }
+    if (mbedtls_sha256_finish_ret(&ctx, digest) != 0) {
+        mbedtls_sha256_free(&ctx);
+        response = "mbedtls_sha256_finish_ret failed";
+        return false;
+    }
+    mbedtls_sha256_free(&ctx);
+    return true;
+}
+
+bool writeRequestHeaders(
     Client& client,
     const HubUrl& hub,
     const String& pathAndQuery,
@@ -75,8 +109,7 @@ bool writeUploadRequest(
     const String& timestamp,
     const String& nonce,
     const String& signature,
-    const std::vector<uint8_t>& wavBytes,
-    String& response
+    size_t contentLength
 ) {
     client.print("POST ");
     client.print(pathAndQuery);
@@ -85,7 +118,7 @@ bool writeUploadRequest(
     client.print(":");
     client.print(hub.port);
     client.print("\r\nConnection: close\r\nAccept: application/json\r\nContent-Type: audio/wav\r\nContent-Length: ");
-    client.print(wavBytes.size());
+    client.print(static_cast<unsigned long>(contentLength));
     client.print("\r\nX-Device-Id: ");
     client.print(cfg.deviceId.c_str());
     client.print("\r\nX-Timestamp: ");
@@ -95,12 +128,39 @@ bool writeUploadRequest(
     client.print("\r\nX-Signature-B64: ");
     client.print(signature);
     client.print("\r\n\r\n");
+    return true;
+}
 
-    if (client.write(wavBytes.data(), wavBytes.size()) != wavBytes.size()) {
-        response = "failed to write full upload body";
+bool streamBodyToSocket(
+    Client& client,
+    BodySource& source,
+    size_t expectedSize,
+    String& response
+) {
+    if (!source.rewind()) {
+        response = "failed to rewind body for upload";
         return false;
     }
+    size_t sent = 0;
+    uint8_t buf[kStreamChunkBytes];
+    while (true) {
+        const size_t n = source.readChunk(buf, sizeof(buf));
+        if (n == 0) break;
+        const size_t wrote = client.write(buf, n);
+        if (wrote != n) {
+            response = "short socket write while streaming body";
+            return false;
+        }
+        sent += n;
+    }
+    if (sent != expectedSize) {
+        response = "body size changed between hash and write passes";
+        return false;
+    }
+    return true;
+}
 
+bool readUploadResponse(Client& client, String& response) {
     String statusLine = client.readStringUntil('\n');
     statusLine.trim();
     const int status = parseStatusCode(statusLine);
@@ -142,7 +202,7 @@ bool SignedHttpClient::uploadWav(
     const locallexis::provisioning::ProvisioningConfig& cfg,
     const locallexis::crypto::DeviceKeys& keys,
     const String& filename,
-    const std::vector<uint8_t>& wavBytes,
+    BodySource& source,
     String& response
 ) {
     HubUrl hub;
@@ -156,17 +216,25 @@ bool SignedHttpClient::uploadWav(
         hub,
         std::string("/jobs/upload?filename=") + filename.c_str()
     ).c_str();
+
+    uint8_t bodyDigest[32];
+    if (!hashBody(source, bodyDigest, response)) {
+        return false;
+    }
+
     const String ts = unixTimestamp();
     const String nonce = locallexis::crypto::randomNonceHex();
-    const String sig = locallexis::crypto::signRequestB64(
-        keys,
-        "POST",
-        pathAndQuery,
-        ts,
-        nonce,
-        wavBytes.data(),
-        wavBytes.size()
+    const String sig = locallexis::crypto::signRequestB64WithBodyDigest(
+        keys, "POST", pathAndQuery, ts, nonce, bodyDigest
     );
+
+    auto run = [&](Client& client) -> bool {
+        writeRequestHeaders(client, hub, pathAndQuery, cfg, ts, nonce, sig, source.size());
+        if (!streamBodyToSocket(client, source, source.size(), response)) {
+            return false;
+        }
+        return readUploadResponse(client, response);
+    };
 
     if (hub.https) {
         WiFiClientSecure secureClient;
@@ -179,17 +247,7 @@ bool SignedHttpClient::uploadWav(
             secureClient.stop();
             return false;
         }
-        const bool ok = writeUploadRequest(
-            secureClient,
-            hub,
-            pathAndQuery,
-            cfg,
-            ts,
-            nonce,
-            sig,
-            wavBytes,
-            response
-        );
+        const bool ok = run(secureClient);
         secureClient.stop();
         return ok;
     }
@@ -199,19 +257,20 @@ bool SignedHttpClient::uploadWav(
         response = "failed to connect to HTTP hub";
         return false;
     }
-    const bool ok = writeUploadRequest(
-        plainClient,
-        hub,
-        pathAndQuery,
-        cfg,
-        ts,
-        nonce,
-        sig,
-        wavBytes,
-        response
-    );
+    const bool ok = run(plainClient);
     plainClient.stop();
     return ok;
+}
+
+bool SignedHttpClient::uploadWav(
+    const locallexis::provisioning::ProvisioningConfig& cfg,
+    const locallexis::crypto::DeviceKeys& keys,
+    const String& filename,
+    const std::vector<uint8_t>& wavBytes,
+    String& response
+) {
+    VectorBodySource source(wavBytes);
+    return uploadWav(cfg, keys, filename, source, response);
 }
 
 std::vector<uint8_t> makeSilenceWav(uint32_t sampleRate, uint16_t seconds) {
