@@ -82,7 +82,12 @@ bool hashBody(BodySource& source, uint8_t digest[32], String& response) {
         response = "mbedtls_sha256_starts_ret failed";
         return false;
     }
-    uint8_t buf[kStreamChunkBytes];
+    // Off the stack: this runs on the 8 KB Arduino loopTask and the upload
+    // call chain (uploadWav -> run -> streamBodyToSocket / hashBody) plus the
+    // live ts/nonce/sig + WiFiClient already crowds the stack. A 4 KB on-stack
+    // chunk buffer tipped it past the canary (panic in readChunk's memcpy).
+    // Safe as static: only ever used sequentially on the single loopTask.
+    static uint8_t buf[kStreamChunkBytes];
     while (true) {
         const size_t n = source.readChunk(buf, sizeof(buf));
         if (n == 0) break;
@@ -142,7 +147,12 @@ bool streamBodyToSocket(
         return false;
     }
     size_t sent = 0;
-    uint8_t buf[kStreamChunkBytes];
+    // Off the stack: this runs on the 8 KB Arduino loopTask and the upload
+    // call chain (uploadWav -> run -> streamBodyToSocket / hashBody) plus the
+    // live ts/nonce/sig + WiFiClient already crowds the stack. A 4 KB on-stack
+    // chunk buffer tipped it past the canary (panic in readChunk's memcpy).
+    // Safe as static: only ever used sequentially on the single loopTask.
+    static uint8_t buf[kStreamChunkBytes];
     while (true) {
         const size_t n = source.readChunk(buf, sizeof(buf));
         if (n == 0) break;
