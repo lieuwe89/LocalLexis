@@ -156,8 +156,14 @@ void drainQueueStep() {
     }
 
     String path;
-    std::vector<uint8_t> bytes;
-    if (!g_sdQueue.peekOldest(path, bytes)) {
+    if (!g_sdQueue.peekOldestPath(path)) {
+        return;
+    }
+
+    auto reader = g_sdQueue.openReader(path);
+    if (!reader) {
+        Serial.printf("Drain: could not open %s\n", path.c_str());
+        delay(2000);
         return;
     }
 
@@ -166,14 +172,14 @@ void drainQueueStep() {
 
     Serial.printf("Draining %s (%u bytes)\n",
                   filename.c_str(),
-                  static_cast<unsigned>(bytes.size()));
+                  static_cast<unsigned>(reader->size()));
     String response;
     locallexis::net::SignedHttpClient client;
     const bool ok = client.uploadWav(
         g_identity.provisioning,
         g_identity.keys,
         filename,
-        bytes,
+        *reader,
         response
     );
     Serial.printf("Drain result: %s\n%s\n", ok ? "ok" : "failed", response.c_str());

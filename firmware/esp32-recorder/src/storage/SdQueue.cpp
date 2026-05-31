@@ -1,6 +1,7 @@
 #include "storage/SdQueue.h"
 
 #include <SD_MMC.h>
+#include "storage/SdFile.h"
 
 namespace locallexis::storage {
 
@@ -118,7 +119,7 @@ bool SdQueue::enqueue(const std::vector<uint8_t>& wavBytes, String* outPath) {
     return true;
 }
 
-bool SdQueue::peekOldest(String& outPath, std::vector<uint8_t>& outBytes) {
+bool SdQueue::peekOldestPath(String& outPath) {
     if (!ready_) return false;
     File root = SD_MMC.open(queueDir_);
     if (!root || !root.isDirectory()) {
@@ -141,19 +142,16 @@ bool SdQueue::peekOldest(String& outPath, std::vector<uint8_t>& outBytes) {
     root.close();
     if (oldest.isEmpty()) return false;
 
-    const String resolved = fullPathOf(queueDir_, oldest);
-    File f = SD_MMC.open(resolved, FILE_READ);
-    if (!f) return false;
-    const size_t size = f.size();
-    outBytes.resize(size);
-    const size_t read = f.read(outBytes.data(), size);
-    f.close();
-    if (read != size) {
-        outBytes.clear();
-        return false;
-    }
-    outPath = resolved;
+    outPath = fullPathOf(queueDir_, oldest);
     return true;
+}
+
+std::unique_ptr<SdFileBodySource> SdQueue::openReader(const String& path) {
+    if (!ready_) return nullptr;
+    File f = SD_MMC.open(path, FILE_READ);
+    if (!f) return nullptr;
+    auto file = std::unique_ptr<FileLike>(new SdFile(f));
+    return std::unique_ptr<SdFileBodySource>(new SdFileBodySource(std::move(file)));
 }
 
 bool SdQueue::removeFile(const String& path) {
