@@ -4,7 +4,6 @@
 #include <vector>
 
 #include <esp_random.h>
-#include <mbedtls/sha256.h>
 
 #include "crypto/Base64.h"
 #include "crypto/SignedMessage.h"
@@ -50,22 +49,6 @@ String signRequestB64WithBodyDigest(
         message.size()
     );
     return base64Encode(signature, sizeof(signature));
-}
-
-String signRequestB64(
-    const DeviceKeys& keys,
-    const String& method,
-    const String& pathAndQuery,
-    const String& timestamp,
-    const String& nonce,
-    const uint8_t* body,
-    size_t bodyLen
-) {
-    uint8_t digest[32];
-    mbedtls_sha256_ret(body, bodyLen, digest, 0);
-    return signRequestB64WithBodyDigest(
-        keys, method, pathAndQuery, timestamp, nonce, digest
-    );
 }
 
 String randomNonceHex() {

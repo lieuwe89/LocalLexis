@@ -25,18 +25,6 @@ String signRequestB64WithBodyDigest(
     const uint8_t bodySha256[32]
 );
 
-// Convenience for in-RAM bodies (small endpoints, tests). Hashes the
-// body with mbedtls and delegates to the digest variant.
-String signRequestB64(
-    const DeviceKeys& keys,
-    const String& method,
-    const String& pathAndQuery,
-    const String& timestamp,
-    const String& nonce,
-    const uint8_t* body,
-    size_t bodyLen
-);
-
 String randomNonceHex();
 
 }  // namespace locallexis::crypto
