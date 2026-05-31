@@ -1,0 +1,2 @@
+# Precompiled headers from host g++ runs
+*.gch

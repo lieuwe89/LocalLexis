@@ -1,0 +1,6 @@
+# Host test binaries (rebuilt by `make`)
+test_provisioning_protocol
+test_hub_url
+test_sign_v2
+test_body_source
+test_*_clean
