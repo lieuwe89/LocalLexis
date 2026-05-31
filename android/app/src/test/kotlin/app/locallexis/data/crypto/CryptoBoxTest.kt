@@ -61,13 +61,16 @@ class CryptoBoxTest {
         )
 
         assertEquals(Sign.BYTES, sig.size)
-        val message = "POST".toByteArray() + "\n".toByteArray() +
-            "/v1/relabel".toByteArray() + "\n".toByteArray() +
-            "1716200000".toByteArray() + "\n".toByteArray() +
-            "abc123".toByteArray() + "\n".toByteArray() +
-            body
+        val nl = byteArrayOf(0x0A)
+        val bodyDigest = java.security.MessageDigest.getInstance("SHA-256").digest(body)
+        val message = "locallexis-sig-v2".toByteArray() + nl +
+            "POST".toByteArray() + nl +
+            "/v1/relabel".toByteArray() + nl +
+            "1716200000".toByteArray() + nl +
+            "abc123".toByteArray() + nl +
+            bodyDigest
         val ok = sodium.cryptoSignVerifyDetached(sig, message, message.size, pubkey)
-        assertTrue("signature verification", ok)
+        assertTrue("v2 signature verification", ok)
     }
 
     @Test
@@ -82,12 +85,45 @@ class CryptoBoxTest {
             body = ByteArray(0),
         )
 
-        val message = "GET".toByteArray() + "\n".toByteArray() +
-            "/sync/snapshot?limit=2".toByteArray() + "\n".toByteArray() +
-            "1716200001".toByteArray() + "\n".toByteArray() +
-            "def456".toByteArray() + "\n".toByteArray()
+        val nl = byteArrayOf(0x0A)
+        val emptyDigest = java.security.MessageDigest.getInstance("SHA-256").digest(ByteArray(0))
+        val message = "locallexis-sig-v2".toByteArray() + nl +
+            "GET".toByteArray() + nl +
+            "/sync/snapshot?limit=2".toByteArray() + nl +
+            "1716200001".toByteArray() + nl +
+            "def456".toByteArray() + nl +
+            emptyDigest
         val ok = sodium.cryptoSignVerifyDetached(sig, message, message.size, pubkey)
         assertTrue(ok)
+    }
+
+    @Test
+    fun signRequestMatchesCrossLanguageGoldenVector() {
+        // Same vector as the hub's test_auth_v2.py and the firmware's
+        // test_sign_v2.cpp. Three implementations must agree byte-for-byte.
+        val goldenSeed = ByteArray(32) { it.toByte() }
+        val sodium = LazySodiumJava(SodiumJava())
+        val pk = ByteArray(Sign.PUBLICKEYBYTES)
+        val sk = ByteArray(Sign.SECRETKEYBYTES)
+        assertTrue(sodium.cryptoSignSeedKeypair(pk, sk, goldenSeed))
+
+        val storage = InMemorySecretStorage().apply { putSecretSeed(goldenSeed) }
+        val box = LazysodiumCryptoBox(storage, sodium)
+
+        val sig = box.signRequest(
+            method = "POST",
+            path = "/jobs/upload",
+            query = "filename=t.wav",
+            timestamp = "1700000000",
+            nonce = "abc123",
+            body = "hello".toByteArray(),
+        )
+        val sigB64 = java.util.Base64.getEncoder().encodeToString(sig)
+        assertEquals(
+            "/OsfsMPLhgXoE+9izzKmxXq2JNcuGhUu6FbF23WnPYfqJQieQrYMTc8AbDa+g5j/" +
+                "WonMiJpvQpspFU8DbgpZAw==",
+            sigB64,
+        )
     }
 
     @Test

@@ -58,15 +58,21 @@ class SignedRequestInterceptorTest {
         val sigB64 = recorded.getHeader("X-Signature-B64")
         assertNotNull("signature header present", sigB64)
 
-        // Reconstruct message Hub-side and verify with device pubkey.
         val timestamp = recorded.getHeader("X-Timestamp")
         val nonce = recorded.getHeader("X-Nonce")
         assertNotNull("timestamp header present", timestamp)
         assertNotNull("nonce header present", nonce)
-        val message = ("GET\n/sync/snapshot\n$timestamp\n$nonce\n").toByteArray()
+        val nl = byteArrayOf(0x0A)
+        val emptyDigest = java.security.MessageDigest.getInstance("SHA-256").digest(ByteArray(0))
+        val message = "locallexis-sig-v2".toByteArray() + nl +
+            "GET".toByteArray() + nl +
+            "/sync/snapshot".toByteArray() + nl +
+            "$timestamp".toByteArray() + nl +
+            "$nonce".toByteArray() + nl +
+            emptyDigest
         val sig = Base64.getDecoder().decode(sigB64)
         val ok = sodium.cryptoSignVerifyDetached(sig, message, message.size, crypto.devicePublicKey())
-        assertTrue("signature verifies", ok)
+        assertTrue("v2 signature verifies", ok)
     }
 
     @Test
@@ -89,14 +95,17 @@ class SignedRequestInterceptorTest {
         assertNotNull("signature header present", sigB64)
         assertTrue("nonce is 128-bit hex", nonce!!.matches(Regex("[0-9a-f]{32}")))
 
-        val message = (
-            "GET\n/sync/snapshot?limit=2&offset=4\n" +
-                "$timestamp\n" +
-                "$nonce\n"
-            ).toByteArray()
+        val nl = byteArrayOf(0x0A)
+        val emptyDigest = java.security.MessageDigest.getInstance("SHA-256").digest(ByteArray(0))
+        val message = "locallexis-sig-v2".toByteArray() + nl +
+            "GET".toByteArray() + nl +
+            "/sync/snapshot?limit=2&offset=4".toByteArray() + nl +
+            "$timestamp".toByteArray() + nl +
+            "$nonce".toByteArray() + nl +
+            emptyDigest
         val sig = Base64.getDecoder().decode(sigB64)
         val ok = sodium.cryptoSignVerifyDetached(sig, message, message.size, crypto.devicePublicKey())
-        assertTrue("signature verifies against replay-protected hub bytes", ok)
+        assertTrue("v2 signature verifies against replay-protected hub bytes", ok)
     }
 
     @Test
@@ -117,7 +126,14 @@ class SignedRequestInterceptorTest {
         val nonce = recorded.getHeader("X-Nonce")
         assertNotNull("timestamp header present", timestamp)
         assertNotNull("nonce header present", nonce)
-        val message = ("PATCH\n/transcripts/abc/relabel\n$timestamp\n$nonce\n").toByteArray() + body
+        val nl = byteArrayOf(0x0A)
+        val bodyDigest = java.security.MessageDigest.getInstance("SHA-256").digest(body)
+        val message = "locallexis-sig-v2".toByteArray() + nl +
+            "PATCH".toByteArray() + nl +
+            "/transcripts/abc/relabel".toByteArray() + nl +
+            "$timestamp".toByteArray() + nl +
+            "$nonce".toByteArray() + nl +
+            bodyDigest
         val sig = Base64.getDecoder().decode(sigB64)
         val ok = sodium.cryptoSignVerifyDetached(sig, message, message.size, crypto.devicePublicKey())
         assertTrue(ok)

@@ -16,9 +16,15 @@ interface CryptoBox {
     fun devicePublicKey(): ByteArray
 
     /**
-     * Detached Ed25519 signature over the replay-protected hub request bytes:
-     * [method] + "\n" + [path]["?" + query] + "\n" + [timestamp] + "\n" +
-     * [nonce] + "\n" + [body].
+     * Detached Ed25519 signature over the v2 replay-protected hub
+     * request bytes:
+     *
+     *   "locallexis-sig-v2" + "\n" + [method] + "\n" +
+     *   [path]["?" + [query]] + "\n" + [timestamp] + "\n" +
+     *   [nonce] + "\n" + sha256([body])
+     *
+     * The body digest (32 raw bytes) is signed instead of the body so
+     * the message stays ~90 bytes regardless of upload size.
      */
     fun signRequest(
         method: String,
@@ -155,11 +161,27 @@ internal fun buildRequestMessage(
     body: ByteArray,
 ): ByteArray {
     val target = if (query.isBlank()) path else "$path?$query"
-    val prefix = method.toByteArray() + NEWLINE +
-        target.toByteArray() + NEWLINE +
-        timestamp.toByteArray() + NEWLINE +
-        nonce.toByteArray() + NEWLINE
-    return prefix + body
+    val bodyDigest = java.security.MessageDigest.getInstance("SHA-256").digest(body)
+    val parts = listOf(
+        SIGN_DOMAIN_TAG_V2.toByteArray(),
+        method.toByteArray(),
+        target.toByteArray(),
+        timestamp.toByteArray(),
+        nonce.toByteArray(),
+        bodyDigest,
+    )
+    val totalSize = parts.sumOf { it.size } + (parts.size - 1)
+    val out = ByteArray(totalSize)
+    var offset = 0
+    for ((index, part) in parts.withIndex()) {
+        part.copyInto(out, offset)
+        offset += part.size
+        if (index < parts.lastIndex) {
+            out[offset] = 0x0A
+            offset += 1
+        }
+    }
+    return out
 }
 
-private val NEWLINE = "\n".toByteArray()
+private const val SIGN_DOMAIN_TAG_V2 = "locallexis-sig-v2"
