@@ -4,6 +4,7 @@ import app.locallexis.data.pairing.PairingFailedException
 import app.locallexis.data.pairing.PairingPayloadV1
 import app.locallexis.data.pairing.PairingResult
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,9 +30,19 @@ class PairingViewModel(
     private val _uiState = MutableStateFlow<PairingUiState>(PairingUiState.Idle)
     val uiState: StateFlow<PairingUiState> = _uiState.asStateFlow()
 
+    // The pairing token from the QR is single-use server-side. If submit
+    // fires twice for a single scan (camera analyzer racing recomposition,
+    // or any other UI path that hits us before the first exchange returns),
+    // the second POST burns the spent token and surfaces a spurious 401
+    // even though the first POST already paired the device. Guard with the
+    // in-flight Job so subsequent submits are dropped until the current
+    // exchange terminates.
+    private var inFlight: Job? = null
+
     fun submit(payload: PairingPayloadV1, deviceName: String) {
+        if (inFlight?.isActive == true) return
         _uiState.value = PairingUiState.Exchanging(payload, deviceName)
-        scope.launch {
+        inFlight = scope.launch {
             try {
                 val result = exchange(payload, deviceName)
                 _uiState.value = PairingUiState.Paired(

@@ -14,6 +14,7 @@ class LibraryViewModelHolder(graph: AppGraph) : ViewModel() {
         syncProvider = graph::librarySync,
         workspaceIdProvider = graph::workspaceId,
         scope = viewModelScope,
+        pairingEvents = graph.pairingEvents,
     )
 
     companion object {

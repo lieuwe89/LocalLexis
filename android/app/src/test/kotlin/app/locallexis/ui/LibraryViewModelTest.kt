@@ -11,6 +11,7 @@ import app.locallexis.ui.library.LibraryUiState
 import app.locallexis.ui.library.LibraryViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -111,6 +112,32 @@ class LibraryViewModelTest {
         val afterRefresh = vm.uiState.value
         assertTrue("local rows still visible", afterRefresh is LibraryUiState.Ready)
         assertEquals("auth fail", vm.lastError.value)
+    }
+
+    @Test
+    fun pairingEventClearsStaleErrorAndRefreshes() = runTest(testDispatcher) {
+        val pairingEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val sync = FakeLibrarySync().apply { failNext = SyncException(0, "no hub paired") }
+        val vm = LibraryViewModel(
+            transcriptDao = db.transcriptDao(),
+            syncProvider = { sync },
+            workspaceIdProvider = { "ws_a" },
+            scope = TestScope(testDispatcher),
+            pairingEvents = pairingEvents,
+        )
+
+        // First refresh while unpaired surfaces the "no hub paired" banner.
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals("no hub paired", vm.lastError.value)
+
+        // A pair completing afterwards must drop the stale banner and
+        // kick off a fresh sync without requiring the user to tap refresh
+        // or restart the app.
+        pairingEvents.tryEmit(Unit)
+        advanceUntilIdle()
+        assertEquals(null, vm.lastError.value)
+        assertEquals(2, sync.incrementalCalls)
     }
 
     private fun transcript(id: String, basename: String, createdAt: String) = TranscriptEntity(

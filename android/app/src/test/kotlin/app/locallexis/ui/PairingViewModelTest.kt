@@ -103,4 +103,57 @@ class PairingViewModelTest {
         vm.reset()
         assertEquals(PairingUiState.Idle, vm.uiState.value)
     }
+
+    @Test
+    fun doubleSubmitWhileExchangingDropsSecondCall() = runTest(testDispatcher) {
+        val gate = CompletableDeferred<PairingResult>()
+        var calls = 0
+        val vm = PairingViewModel(
+            exchange = { _, _ ->
+                calls += 1
+                gate.await()
+            },
+            scope = TestScope(testDispatcher),
+        )
+
+        vm.submit(samplePayload, "Pixel 8")
+        advanceUntilIdle()
+        // Second submit while the first is still in flight must be a no-op:
+        // the pairing token is single-use, so a second POST would 401 and
+        // surface as a spurious failure even though the first POST paired.
+        vm.submit(samplePayload, "Pixel 8")
+        advanceUntilIdle()
+
+        assertEquals(1, calls)
+        assertTrue(vm.uiState.value is PairingUiState.Exchanging)
+
+        gate.complete(
+            PairingResult(deviceId = "dev_1", workspaceId = "ws_a", lamportObserved = 0)
+        )
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value is PairingUiState.Paired)
+    }
+
+    @Test
+    fun submitAfterErrorIsAllowedToRetry() = runTest(testDispatcher) {
+        var calls = 0
+        val vm = PairingViewModel(
+            exchange = { _, _ ->
+                calls += 1
+                if (calls == 1) throw PairingFailedException(0, "transient")
+                PairingResult(deviceId = "dev_2", workspaceId = "ws_a", lamportObserved = 0)
+            },
+            scope = TestScope(testDispatcher),
+        )
+        vm.submit(samplePayload, "Phone")
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value is PairingUiState.Error)
+
+        // After the in-flight job finishes (with Error), a new submit must
+        // be accepted so the user can retry without rescanning.
+        vm.submit(samplePayload, "Phone")
+        advanceUntilIdle()
+        assertEquals(2, calls)
+        assertTrue(vm.uiState.value is PairingUiState.Paired)
+    }
 }

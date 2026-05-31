@@ -118,6 +118,9 @@ interface SyncStateDao {
 
     @Query("SELECT * FROM sync_state WHERE workspaceId = :workspaceId")
     suspend fun get(workspaceId: String): SyncStateEntity?
+
+    @Query("DELETE FROM sync_state")
+    suspend fun deleteAll()
 }
 
 @Dao

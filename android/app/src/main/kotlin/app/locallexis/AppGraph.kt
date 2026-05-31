@@ -27,6 +27,9 @@ import app.locallexis.data.sync.SyncIngest
 import app.locallexis.data.sync.UnpairedLibrarySync
 import com.goterl.lazysodium.LazySodiumAndroid
 import com.goterl.lazysodium.SodiumAndroid
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import okhttp3.OkHttpClient
 
 /**
@@ -67,23 +70,63 @@ class AppGraph(context: Context) {
             .build()
     }
 
-    val pairingClient: PairingClient by lazy {
-        PairingClient(cryptoBox, workspaceKeyStore, deviceIdentityStore, okHttp)
+    // Pair-only OkHttp: the pairing token at /pair is single-use server-side,
+    // so an OkHttp retry of the same POST burns the spent token and the second
+    // attempt comes back 401 even when the first paired successfully. Disable
+    // connection-failure retry on the pair client so a transient TLS or socket
+    // hiccup surfaces as a normal user-visible error instead of a duplicate
+    // POST. Sync and upload paths keep the default retry behaviour via
+    // [okHttp] — those endpoints are not single-use.
+    val pairingHttpClient: OkHttpClient by lazy {
+        okHttp.newBuilder()
+            .retryOnConnectionFailure(false)
+            .build()
     }
+
+    val pairingClient: PairingClient by lazy {
+        PairingClient(cryptoBox, workspaceKeyStore, deviceIdentityStore, pairingHttpClient)
+    }
+
+    // Emits after each successful pairing exchange so screens with cached
+    // post-sync state (e.g. LibraryViewModel's lastError) can react instead
+    // of waiting for an app restart. Replay-1 so a subscriber that comes back
+    // (tab switch via NavHost saveState/restoreState) still sees the most
+    // recent pair event.
+    private val _pairingEvents = MutableSharedFlow<Unit>(
+        replay = 1,
+        extraBufferCapacity = 1,
+    )
+    val pairingEvents: SharedFlow<Unit> = _pairingEvents.asSharedFlow()
 
     /**
      * Production pairing call. Persists hub_url + workspace_id on success
-     * so the sync stack is constructible afterwards. Consumed by block
-     * 8.3b (PairingViewModel); unused this block.
+     * so the sync stack is constructible afterwards. Consumed by
+     * PairingViewModel.
      */
     val pair: suspend (PairingPayloadV1, String) -> PairingResult = { payload, name ->
-        pairingClient.exchange(payload, name).also { result ->
-            hubConfig.put(
-                hubUrl = payload.hubUrl,
-                workspaceId = result.workspaceId,
-                tlsSpkiB64 = payload.tlsSpkiB64,
-            )
+        val previousHubUrl = hubConfig.getHubUrl()
+        val previousWorkspaceId = hubConfig.getWorkspaceId()
+        val result = pairingClient.exchange(payload, name)
+        // When the new hub differs from the previously paired one, drop any
+        // persisted sync cursors so the next sync bootstraps fresh. Without
+        // this, an /sync/since/<old-cursor> request against the new hub can
+        // either 404 or return data the local DB then mixes with the
+        // previous workspace's transcripts. Workspace_id is PK on
+        // sync_state so unrelated workspaces are independent, but test
+        // hubs sometimes reuse ids and production hub-swaps still benefit
+        // from the wipe.
+        val hubChanged = previousHubUrl != null &&
+            (previousHubUrl != payload.hubUrl || previousWorkspaceId != result.workspaceId)
+        if (hubChanged) {
+            db.syncStateDao().deleteAll()
         }
+        hubConfig.put(
+            hubUrl = payload.hubUrl,
+            workspaceId = result.workspaceId,
+            tlsSpkiB64 = payload.tlsSpkiB64,
+        )
+        _pairingEvents.tryEmit(Unit)
+        result
     }
 
     /** Real sync when paired, else a fallback that surfaces "not paired". */

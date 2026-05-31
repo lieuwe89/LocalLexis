@@ -4,11 +4,13 @@ import app.locallexis.data.db.TranscriptDao
 import app.locallexis.data.db.TranscriptEntity
 import app.locallexis.data.sync.LibrarySync
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -52,6 +54,7 @@ class LibraryViewModel(
     private val syncProvider: () -> LibrarySync,
     private val workspaceIdProvider: () -> String,
     private val scope: CoroutineScope,
+    pairingEvents: Flow<Unit> = emptyFlow(),
 ) {
 
     val uiState: StateFlow<LibraryUiState> = transcriptDao.listAll()
@@ -63,6 +66,20 @@ class LibraryViewModel(
 
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+    init {
+        // Pairing changes the hub coordinates the next sync should use, and
+        // also makes any previously-recorded "no hub paired" / "401" error
+        // banner stale. Drop the banner and kick off a fresh sync so the
+        // user does not have to restart the app (or tap refresh) after a
+        // successful re-pair.
+        scope.launch {
+            pairingEvents.collect {
+                _lastError.value = null
+                refresh()
+            }
+        }
+    }
 
     fun refresh() {
         scope.launch {
