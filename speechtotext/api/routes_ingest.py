@@ -1,22 +1,27 @@
 """Audio ingest endpoints for paired LAN devices.
 
-The first recorder slice accepts a complete audio file as one signed request.
-Chunked ingest can be layered beside this once the ESP32 signing path is proven.
+``/jobs/upload`` accepts a complete signed audio file. The body is
+streamed through a single SHA-256 + tee-to-temp-file pass so meeting-
+length recordings do not need to be buffered in RAM, then the device
+signature is verified against the computed digest. On verify failure
+the temp file is deleted; on success it is renamed into place and a
+transcription job is dispatched.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import secrets
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from speechtotext.api import library_db as library_db_module
-from speechtotext.api.auth import verify_device_signature
+from speechtotext.api.auth import verify_device_signature_with_digest
 
 router = APIRouter()
 DEFAULT_MAX_UPLOAD_BYTES = 256 * 1024 * 1024
@@ -54,7 +59,52 @@ def _safe_filename(filename: str | None) -> str:
     return name
 
 
-async def verify_upload_signature(request: Request) -> str:
+def _unique_upload_path(root: Path, filename: str) -> Path:
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    suffix = secrets.token_hex(4)
+    return root / f"{stamp}-{suffix}-{filename}"
+
+
+def _unlink_quietly(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def sweep_partial_uploads(incoming_dir: Path) -> int:
+    """Delete any leftover ``*.partial`` files under ``incoming_dir``.
+
+    Called at app startup so a crash mid-stream cannot leave indefinite
+    scratch files behind.
+    """
+    if not incoming_dir.exists():
+        return 0
+    removed = 0
+    for partial in incoming_dir.glob("*.partial"):
+        try:
+            partial.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+@router.post("/jobs/upload", status_code=202, response_model=UploadResponse)
+async def post_upload(
+    request: Request,
+    filename: str | None = Query(default=None, max_length=180),
+) -> UploadResponse:
+    """Accept a streaming signed audio upload, verify, dispatch transcription.
+
+    Flow:
+      1. Cheap header checks (Content-Length present + within limit).
+      2. Stream body through SHA-256 + tee to ``<incoming>/<random>.partial``,
+         capping at ``max_upload_bytes``.
+      3. Verify signature against the computed digest. On failure delete
+         temp + raise 401.
+      4. ``os.replace`` temp → final dest. Dispatch transcription.
+    """
     max_bytes = int(
         getattr(request.app.state, "max_upload_bytes", DEFAULT_MAX_UPLOAD_BYTES)
     )
@@ -72,54 +122,57 @@ async def verify_upload_signature(request: Request) -> str:
             status_code=413,
             detail=f"audio upload exceeds {max_bytes} byte limit",
         )
-    return await verify_device_signature(request)
 
+    safe_name = _safe_filename(filename)
+    incoming = _incoming_dir(request)
+    incoming.mkdir(parents=True, exist_ok=True)
+    temp_path = incoming / f"{secrets.token_hex(8)}.partial"
 
-def _unique_upload_path(root: Path, filename: str) -> Path:
-    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
-    suffix = secrets.token_hex(4)
-    return root / f"{stamp}-{suffix}-{filename}"
-
-
-def _write_atomic(path: Path, body: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    hasher = hashlib.sha256()
+    bytes_seen = 0
     try:
-        tmp.write_bytes(body)
-        os.replace(tmp, path)
-    except OSError as exc:
-        try:
-            tmp.unlink()
-        except FileNotFoundError:
-            pass
-        raise HTTPException(
-            status_code=500, detail=f"failed to store upload: {exc}"
-        ) from exc
+        with temp_path.open("wb") as fh:
+            async for chunk in request.stream():
+                if not chunk:
+                    continue
+                bytes_seen += len(chunk)
+                if bytes_seen > max_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"audio upload exceeds {max_bytes} byte limit",
+                    )
+                hasher.update(chunk)
+                fh.write(chunk)
+    except HTTPException:
+        _unlink_quietly(temp_path)
+        raise
+    except Exception:
+        _unlink_quietly(temp_path)
+        raise
 
-
-def _unlink_quietly(path: Path) -> None:
-    try:
-        path.unlink()
-    except FileNotFoundError:
-        pass
-
-
-@router.post("/jobs/upload", status_code=202, response_model=UploadResponse)
-async def post_upload(
-    request: Request,
-    filename: str | None = Query(default=None, max_length=180),
-    _device_id: str = Depends(verify_upload_signature),
-) -> UploadResponse:
-    """Accept a complete signed audio file and dispatch transcription."""
-    body = await request.body()
-    if not body:
+    if bytes_seen == 0:
+        _unlink_quietly(temp_path)
         raise HTTPException(
             status_code=400, detail="audio upload body cannot be empty"
         )
 
-    incoming = _incoming_dir(request)
-    audio_path = _unique_upload_path(incoming, _safe_filename(filename))
-    _write_atomic(audio_path, body)
+    try:
+        device_id = await verify_device_signature_with_digest(
+            request, hasher.digest()
+        )
+    except HTTPException:
+        _unlink_quietly(temp_path)
+        raise
+    _ = device_id  # reserved for future per-device routing
+
+    audio_path = _unique_upload_path(incoming, safe_name)
+    try:
+        os.replace(temp_path, audio_path)
+    except OSError as exc:
+        _unlink_quietly(temp_path)
+        raise HTTPException(
+            status_code=500, detail=f"failed to store upload: {exc}"
+        ) from exc
 
     registry = request.app.state.jobs
     job_id = registry.create(kind="transcribe", audio_path=str(audio_path))
@@ -138,7 +191,4 @@ async def post_upload(
             ),
         ) from exc
 
-    return UploadResponse(
-        job_id=job_id,
-        bytes_received=len(body),
-    )
+    return UploadResponse(job_id=job_id, bytes_received=bytes_seen)

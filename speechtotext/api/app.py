@@ -25,6 +25,7 @@ from speechtotext.api.routes_hub import router as hub_router
 from speechtotext.api.routes_ingest import (
     DEFAULT_MAX_UPLOAD_BYTES,
     router as ingest_router,
+    sweep_partial_uploads,
 )
 from speechtotext.api.routes_jobs import router as jobs_router
 from speechtotext.api.routes_models import router as models_router
@@ -205,5 +206,14 @@ def create_app(
             args=(list(app.state.library_dirs),),
             daemon=True,
         ).start()
+        # Streaming /jobs/upload writes a <random>.partial scratch file
+        # while it hashes; a crash mid-stream would leak it indefinitely.
+        removed = sweep_partial_uploads(Path(app.state.incoming_dir))
+        if removed:
+            import logging
+
+            logging.getLogger("speechtotext.api").info(
+                "swept %d orphan partial upload(s) at startup", removed
+            )
 
     return app
