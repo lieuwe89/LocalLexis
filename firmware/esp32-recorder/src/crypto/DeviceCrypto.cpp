@@ -1,10 +1,13 @@
 #include "crypto/DeviceCrypto.h"
 
+#include <string>
 #include <vector>
 
 #include <esp_random.h>
+#include <mbedtls/sha256.h>
 
 #include "crypto/Base64.h"
+#include "crypto/SignedMessage.h"
 
 namespace locallexis::crypto {
 
@@ -22,19 +25,21 @@ void deriveKeys(DeviceKeys& keys) {
     Ed25519::derivePublicKey(keys.publicKey, keys.privateKey);
 }
 
-String signRequestB64(
+String signRequestB64WithBodyDigest(
     const DeviceKeys& keys,
     const String& method,
     const String& pathAndQuery,
     const String& timestamp,
     const String& nonce,
-    const uint8_t* body,
-    size_t bodyLen
+    const uint8_t bodySha256[32]
 ) {
-    std::vector<uint8_t> message;
-    const String prefix = method + "\n" + pathAndQuery + "\n" + timestamp + "\n" + nonce + "\n";
-    message.insert(message.end(), prefix.begin(), prefix.end());
-    message.insert(message.end(), body, body + bodyLen);
+    const std::vector<uint8_t> message = buildSignedMessageV2(
+        std::string(method.c_str()),
+        std::string(pathAndQuery.c_str()),
+        std::string(timestamp.c_str()),
+        std::string(nonce.c_str()),
+        bodySha256
+    );
 
     uint8_t signature[64];
     Ed25519::sign(
@@ -45,6 +50,22 @@ String signRequestB64(
         message.size()
     );
     return base64Encode(signature, sizeof(signature));
+}
+
+String signRequestB64(
+    const DeviceKeys& keys,
+    const String& method,
+    const String& pathAndQuery,
+    const String& timestamp,
+    const String& nonce,
+    const uint8_t* body,
+    size_t bodyLen
+) {
+    uint8_t digest[32];
+    mbedtls_sha256_ret(body, bodyLen, digest, 0);
+    return signRequestB64WithBodyDigest(
+        keys, method, pathAndQuery, timestamp, nonce, digest
+    );
 }
 
 String randomNonceHex() {
