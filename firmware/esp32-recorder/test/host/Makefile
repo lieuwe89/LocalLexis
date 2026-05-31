@@ -13,7 +13,7 @@
 CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -Wall -Wextra -Wpedantic -O2 -I../../src -I../../include
 
-TESTS = test_provisioning_protocol test_hub_url test_sign_v2
+TESTS = test_provisioning_protocol test_hub_url test_sign_v2 test_body_source
 
 .PHONY: all run clean
 all: run
@@ -28,6 +28,9 @@ test_hub_url: test_hub_url.cpp ../../src/net/HubUrl.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 test_sign_v2: test_sign_v2.cpp ../../src/crypto/SignedMessage.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $^
+
+test_body_source: test_body_source.cpp ../../src/net/VectorBodySource.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 clean:
