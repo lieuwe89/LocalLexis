@@ -79,7 +79,7 @@ DrawList layoutFor(const UiModel& m) {
             break;
         }
         case Screen::Saved: {
-            putIcon(d, kPad, 96, 56, IconId::Check, false);
+            putIcon(d, kPad, 52, 50, IconId::Check, false);
             putText(d, kPad, 150, FontRole::HeadXL, false, "Got it.");
             char foot[32]; char z[4]; zeroPad3(m.clip, z);
             std::snprintf(foot, sizeof(foot), "Clip %s \xC2\xB7 %s \xC2\xB7 %s", z, m.lastDur, m.lastSize);
