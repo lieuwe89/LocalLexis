@@ -20,8 +20,10 @@
 #include "audio/WavFileSink.h"
 #include "audio/WavMemorySink.h"
 #include "audio/WavSink.h"
+#include "audio/WavWriter.h"
 #include "input/BootButton.h"
 #include "ui/RecorderUi.h"
+#include "ui/ScreenLayout.h"
 #endif
 
 using locallexis::provisioning::BleProvisioning;
@@ -176,11 +178,25 @@ locallexis::audio::RecordingSession g_session(g_codec, g_capture, g_button, g_si
 std::optional<std::vector<uint8_t>> g_pendingClip;
 String g_pendingClipName;
 
+// Display-only clip counter (zero-padded to 3 on screen).
+uint16_t g_uiClip = 0;
+
 String makeClipName() {
     return String("rec-") + String(static_cast<unsigned long>(time(nullptr))) + ".wav";
 }
 
 void onClipReady(WavSink& sink) {
+    // Populate Saved fields BEFORE onState renders (RecordingSession calls onClip then emitState).
+    const size_t total = sink.bytesWritten();
+    const size_t dataBytes = total > locallexis::audio::kWavHeaderBytes
+                                 ? total - locallexis::audio::kWavHeaderBytes : 0;
+    const uint32_t secs = static_cast<uint32_t>(dataBytes / (LOCALLEXIS_AUDIO_SAMPLE_RATE * 2));
+    char dur[8];  locallexis::ui::formatDuration(secs, dur);
+    char sz[12];  locallexis::ui::formatSize(static_cast<uint32_t>(total), sz);
+    std::snprintf(g_ui.model().lastDur,  sizeof(g_ui.model().lastDur),  "%s", dur);
+    std::snprintf(g_ui.model().lastSize, sizeof(g_ui.model().lastSize), "%s", sz);
+    g_ui.model().clip = ++g_uiClip;
+
     if (!sink.isMemoryBacked()) {
         return;  // file sink already committed Q<NNNN>.wav to the queue; drain handles it.
     }
@@ -285,6 +301,13 @@ void setup() {
     g_capture.setPcmCallback([](const uint8_t* b, size_t n) { g_session.onPcm(b, n); });
     g_session.setOnState([](RecState s, StopReason r) { g_ui.onState(s, r); });
     g_session.setOnClip(onClipReady);
+
+    // DECISION: Connection screen — no BLE-to-Mac connect event exists. Gated OFF.
+    //   To demo on first WiFi connect: g_ui.showConnection(4); (transport-neutral copy)
+    // DECISION: Battery screen — no fuel gauge/ADC reader. battery pinned to 100.
+    g_ui.model().battery = 100;             // never crosses the low threshold
+    // DECISION: Storage screen — real trigger is a record-start failure at the SD cap,
+    //   already routed via StopReason::Error/Full -> Storage in RecorderUi::onState.
 #endif
 
     if (!g_identity.provisioned) {
@@ -314,8 +337,21 @@ void setup() {
 
 void loop() {
 #if !defined(LOCALLEXIS_DEMO_SILENT_WAV)
+    // Hold (~0.5 s) => start recording (only meaningful in Standby).
+    if (g_button.consumeHold()) {
+        if (g_session.state() == RecState::Standby) {
+            time_t now = time(nullptr);
+            struct tm lt; localtime_r(&now, &lt);
+            strftime(g_ui.model().startedAt, sizeof(g_ui.model().startedAt), "%-l:%M %p", &lt);
+            g_ui.model().clip = g_uiClip;   // will be incremented in onClipReady at stop
+            g_session.toggle();             // -> Recording; emitState renders via onState
+        }
+    }
+    // Short tap => stop recording (only meaningful in Recording).
     if (g_button.consumeTap()) {
-        g_session.toggle();
+        if (g_session.state() == RecState::Recording) {
+            g_session.toggle();             // -> Standby; onClip+onState populate Saved
+        }
     }
     g_capture.pump();  // drain I2S ringbuffer -> g_session.onPcm (single-threaded; no-op when stopped)
     g_ui.tick();       // LED blink + transient error-screen timeout
