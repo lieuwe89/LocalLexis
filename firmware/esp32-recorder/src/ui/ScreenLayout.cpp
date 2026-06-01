@@ -45,8 +45,8 @@ DrawList layoutFor(const UiModel& m) {
         // pin is copy + inversion + meter counts, not exact baselines.
         case Screen::Boot: {
             d.invertPanel = true;
-            putText(d, 60, 96, FontRole::HeadL, true, "LocalLexis");
-            putText(d, 86, 118, FontRole::Caps, true, "hello.");
+            putText(d, 40, 96, FontRole::HeadL, true, "LocalLexis");
+            putText(d, 78, 118, FontRole::Caps, true, "hello.");
             break;
         }
         case Screen::Idle: {
@@ -65,8 +65,8 @@ DrawList layoutFor(const UiModel& m) {
             d.invertPanel = true;
             // REC pill: blitter paints the paper rect from this icon's bounds; the
             // run + dot are ink (invert=false) so they read on the paper fill.
-            putIcon(d, kPad, kPad, 7, IconId::Rec, false);
-            putText(d, kPad + 12, kPad + 9, FontRole::Pill, false, "REC");
+            putIcon(d, kPad + 6, 21, 7, IconId::Rec, false);
+            putText(d, kPad + 18, 27, FontRole::Pill, false, "REC");
             char clip[12]; char z[4]; zeroPad3(m.clip, z);
             std::snprintf(clip, sizeof(clip), "Clip %s", z);
             putText(d, kW - kPad - 48, kPad + 9, FontRole::Caps, true, clip);

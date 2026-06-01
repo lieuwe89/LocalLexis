@@ -67,7 +67,7 @@ void RecorderUi::blit(const UiModel& model) {
         g_display->fillScreen(d.invertPanel ? GxEPD_BLACK : GxEPD_WHITE);
         // REC pill paper rect (Recording only): behind the pill runs.
         if (model.screen == Screen::Recording) {
-            g_display->fillRect(15, 15, 52, 18, GxEPD_WHITE);
+            g_display->fillRect(15, 15, 45, 18, GxEPD_WHITE);
         }
         for (const auto& mt : d.meters)
             drawMeter(*g_display, mt, inkColor(d.invertPanel, mt.invert));

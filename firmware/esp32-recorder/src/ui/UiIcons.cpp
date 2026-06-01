@@ -40,11 +40,12 @@ void drawIcon(Adafruit_GFX& gfx, const IconDraw& ic, uint16_t color) {
             int16_t y1 = y + static_cast<int16_t>(11.0f * sc);
             int16_t x2 = x + static_cast<int16_t>(12.0f * sc);
             int16_t y2 = y + static_cast<int16_t>(3.0f  * sc);
-            // Stroke width ~2: draw two passes (offset by 1 in perpendicular)
-            gfx.drawLine(x0,   y0,   x1,   y1,   color);
-            gfx.drawLine(x0,   y0+1, x1,   y1+1, color);
-            gfx.drawLine(x1,   y1,   x2,   y2,   color);
-            gfx.drawLine(x1,   y1+1, x2,   y2+1, color);
+            // Bold stroke (~sz/7): stack offset passes so the check reads heavy.
+            int16_t t = sz / 7; if (t < 3) t = 3;
+            for (int16_t o = -(t / 2); o <= t / 2; ++o) {
+                gfx.drawLine(x0, y0 + o, x1, y1 + o, color);
+                gfx.drawLine(x1, y1 + o, x2, y2 + o, color);
+            }
             break;
         }
         case IconId::Warn: {
