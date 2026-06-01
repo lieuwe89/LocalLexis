@@ -6,8 +6,8 @@
 #include "ui/fonts/Goudy13.h"
 #include "ui/fonts/Goudy11.h"
 #include "ui/fonts/JBMono16.h"
-#include "ui/fonts/JBMono6.h"
-#include "ui/fonts/JBMonoBold6.h"
+#include "ui/fonts/JBMono7.h"
+#include "ui/fonts/JBMonoBold7.h"
 
 namespace locallexis::ui {
 
@@ -17,10 +17,10 @@ const GFXfont* fontForRole(FontRole role) {
         case FontRole::HeadL:  return &Goudy13pt7b;
         case FontRole::HeadM:  return &Goudy11pt7b;
         case FontRole::NumL:   return &JBMono_Medium16pt7b;
-        case FontRole::Caps:   return &JBMono_Regular6pt8b;
-        case FontRole::Pill:   return &JBMono_SemiBold6pt8b;
+        case FontRole::Caps:   return &JBMono_Regular7pt8b;
+        case FontRole::Pill:   return &JBMono_SemiBold7pt8b;
     }
-    return &JBMono_Regular6pt8b;
+    return &JBMono_Regular7pt8b;
 }
 
 }  // namespace locallexis::ui
