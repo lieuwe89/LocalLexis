@@ -13,7 +13,7 @@
 CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -Wall -Wextra -Wpedantic -O2 -I../../src -I../../include
 
-TESTS = test_provisioning_protocol test_hub_url test_sign_v2 test_body_source test_wav_writer test_http_status
+TESTS = test_provisioning_protocol test_hub_url test_sign_v2 test_body_source test_wav_writer test_http_status test_recording_session
 
 .PHONY: all run clean
 all: run
@@ -37,6 +37,9 @@ test_wav_writer: test_wav_writer.cpp ../../src/audio/WavWriter.cpp ../../src/aud
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 test_http_status: test_http_status.cpp ../../src/net/HttpStatus.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $^
+
+test_recording_session: test_recording_session.cpp ../../src/audio/RecordingSession.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 clean:
