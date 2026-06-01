@@ -33,7 +33,7 @@ test_sign_v2: test_sign_v2.cpp ../../src/crypto/SignedMessage.cpp
 test_body_source: test_body_source.cpp ../../src/net/VectorBodySource.cpp ../../src/storage/SdFileBodySource.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-test_wav_writer: test_wav_writer.cpp ../../src/audio/WavWriter.cpp
+test_wav_writer: test_wav_writer.cpp ../../src/audio/WavWriter.cpp ../../src/audio/WavMemorySink.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 clean:

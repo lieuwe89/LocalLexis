@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "audio/WavWriter.h"
+#include "audio/WavMemorySink.h"
 
 using namespace locallexis::audio;
 
@@ -61,6 +62,43 @@ void test_header_patch_round_trip_100k_samples() {
     assert(le32At(h + 40) == 200000);
 }
 
+void test_wav_memory_sink_round_trip() {
+    WavMemorySink sink(16000, 1, /*capacityBytes=*/4096);
+    assert(sink.open());
+    assert(sink.isMemoryBacked());
+    std::vector<uint8_t> pcm(200, 0xAB);
+    assert(sink.write(pcm.data(), pcm.size()));
+    assert(sink.bytesWritten() == kWavHeaderBytes + 200);
+    assert(sink.close());
+    auto bytes = sink.takeBytes();
+    assert(bytes.size() == kWavHeaderBytes + 200);
+    // header was patched: data size == 200
+    const uint8_t* h = bytes.data();
+    const uint32_t dataSize = uint32_t(h[40]) | (uint32_t(h[41]) << 8) | (uint32_t(h[42]) << 16) | (uint32_t(h[43]) << 24);
+    assert(dataSize == 200);
+}
+
+void test_wav_memory_sink_respects_capacity() {
+    // capacity is TOTAL file bytes; header (44) + room for 56 data bytes = 100.
+    WavMemorySink sink(16000, 1, /*capacityBytes=*/100);
+    assert(sink.open());
+    std::vector<uint8_t> ok(56, 1);
+    assert(sink.write(ok.data(), ok.size()));      // fills exactly to capacity
+    assert(sink.bytesWritten() == 100);
+    std::vector<uint8_t> over(1, 1);
+    assert(!sink.write(over.data(), over.size()));  // refuses; no partial write
+    assert(sink.bytesWritten() == 100);             // unchanged (clamped)
+}
+
+void test_wav_memory_sink_discard_frees() {
+    WavMemorySink sink(16000, 1, 4096);
+    assert(sink.open());
+    uint8_t b[8] = {0};
+    assert(sink.write(b, sizeof(b)));
+    sink.discard();
+    assert(sink.takeBytes().empty());
+}
+
 }  // namespace
 
 int main() {
@@ -68,6 +106,9 @@ int main() {
     test_header_patch_updates_riff_and_data_sizes();
     test_header_patch_round_trip_one_sample();
     test_header_patch_round_trip_100k_samples();
+    test_wav_memory_sink_round_trip();
+    test_wav_memory_sink_respects_capacity();
+    test_wav_memory_sink_discard_frees();
     std::cout << "test_wav_writer: OK" << std::endl;
     return 0;
 }
