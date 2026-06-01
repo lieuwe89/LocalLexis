@@ -53,6 +53,76 @@
 #define LOCALLEXIS_EPD_PWR 6
 #endif
 
+// Onboard ES8311 audio codec + I2S mic, Waveshare ESP32-S3-ePaper-1.54 V2.
+// Pins from waveshareteam/ESP32-S3-ePaper-1.54 board_cfg.txt. Audio_PWR active-LOW.
+#ifndef LOCALLEXIS_AUDIO_SAMPLE_RATE
+#define LOCALLEXIS_AUDIO_SAMPLE_RATE 16000
+#endif
+#ifndef LOCALLEXIS_AUDIO_PWR
+#define LOCALLEXIS_AUDIO_PWR 42
+#endif
+#ifndef LOCALLEXIS_I2C_SDA
+#define LOCALLEXIS_I2C_SDA 47
+#endif
+#ifndef LOCALLEXIS_I2C_SCL
+#define LOCALLEXIS_I2C_SCL 48
+#endif
+#ifndef LOCALLEXIS_ES8311_ADDR
+#define LOCALLEXIS_ES8311_ADDR 0x18
+#endif
+#ifndef LOCALLEXIS_I2S_MCLK
+#define LOCALLEXIS_I2S_MCLK 14
+#endif
+#ifndef LOCALLEXIS_I2S_BCLK
+#define LOCALLEXIS_I2S_BCLK 15
+#endif
+#ifndef LOCALLEXIS_I2S_WS
+#define LOCALLEXIS_I2S_WS 38
+#endif
+#ifndef LOCALLEXIS_I2S_DIN
+#define LOCALLEXIS_I2S_DIN 16   // mic / ASDOUT
+#endif
+
+// User-input + status LED.
+#ifndef LOCALLEXIS_BOOT_BTN
+#define LOCALLEXIS_BOOT_BTN 0
+#endif
+#ifndef LOCALLEXIS_LED
+#define LOCALLEXIS_LED 3        // active-LOW
+#endif
+
+// ePaper (GxEPD2_154_D67) — same wiring as hello_screen.cpp. EPD_PWR active-LOW.
+#ifndef LOCALLEXIS_EPD_BUSY
+#define LOCALLEXIS_EPD_BUSY 8
+#endif
+#ifndef LOCALLEXIS_EPD_RST
+#define LOCALLEXIS_EPD_RST 9
+#endif
+#ifndef LOCALLEXIS_EPD_DC
+#define LOCALLEXIS_EPD_DC 10
+#endif
+#ifndef LOCALLEXIS_EPD_CS
+#define LOCALLEXIS_EPD_CS 11
+#endif
+#ifndef LOCALLEXIS_EPD_SCK
+#define LOCALLEXIS_EPD_SCK 12
+#endif
+#ifndef LOCALLEXIS_EPD_MOSI
+#define LOCALLEXIS_EPD_MOSI 13
+#endif
+#ifndef LOCALLEXIS_EPD_PWR
+#define LOCALLEXIS_EPD_PWR 6
+#endif
+
+// Per-clip size caps. SD path matches hub DEFAULT_MAX_UPLOAD_BYTES; no-SD path is a
+// safe contiguous PSRAM allocation.
+#ifndef LOCALLEXIS_AUDIO_SD_CAP_BYTES
+#define LOCALLEXIS_AUDIO_SD_CAP_BYTES (256ULL * 1024 * 1024)
+#endif
+#ifndef LOCALLEXIS_AUDIO_NOSD_CAP_BYTES
+#define LOCALLEXIS_AUDIO_NOSD_CAP_BYTES (4ULL * 1024 * 1024)
+#endif
+
 #if defined(LOCALLEXIS_WOKWI_SIM)
 #undef LOCALLEXIS_WIFI_SSID
 #undef LOCALLEXIS_WIFI_PASSWORD
