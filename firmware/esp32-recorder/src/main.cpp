@@ -9,7 +9,19 @@
 #include "sim/WokwiProvisioning.h"
 #include "storage/IdentityStore.h"
 #if !defined(LOCALLEXIS_WOKWI_SIM)
+#include "net/HttpStatus.h"
 #include "storage/SdQueue.h"
+#endif
+#if !defined(LOCALLEXIS_DEMO_SILENT_WAV)
+#include <optional>
+#include "audio/Es8311Codec.h"
+#include "audio/I2SCapture.h"
+#include "audio/RecordingSession.h"
+#include "audio/WavFileSink.h"
+#include "audio/WavMemorySink.h"
+#include "audio/WavSink.h"
+#include "input/BootButton.h"
+#include "ui/RecorderUi.h"
 #endif
 
 using locallexis::provisioning::BleProvisioning;
@@ -20,8 +32,6 @@ namespace {
 IdentityStore g_store;
 DeviceIdentity g_identity;
 BleProvisioning* g_ble = nullptr;
-bool g_uploadedDemo = false;
-bool g_demoEnqueued = false;
 #if !defined(LOCALLEXIS_WOKWI_SIM)
 locallexis::storage::SdQueue g_sdQueue;
 #endif
@@ -33,11 +43,7 @@ bool connectWifi() {
     }
     WiFi.mode(WIFI_STA);
 #if LOCALLEXIS_WIFI_CHANNEL > 0
-    WiFi.begin(
-        LOCALLEXIS_WIFI_SSID,
-        LOCALLEXIS_WIFI_PASSWORD,
-        LOCALLEXIS_WIFI_CHANNEL
-    );
+    WiFi.begin(LOCALLEXIS_WIFI_SSID, LOCALLEXIS_WIFI_PASSWORD, LOCALLEXIS_WIFI_CHANNEL);
 #else
     WiFi.begin(LOCALLEXIS_WIFI_SSID, LOCALLEXIS_WIFI_PASSWORD);
 #endif
@@ -79,8 +85,7 @@ void startBleProvisioning() {
         g_identity.keys,
         [](const locallexis::provisioning::ProvisioningConfig& cfg) {
             Serial.printf("Provisioned as %s for workspace %s\n",
-                          cfg.deviceId.c_str(),
-                          cfg.workspaceId.c_str());
+                          cfg.deviceId.c_str(), cfg.workspaceId.c_str());
             g_store.saveProvisioning(cfg);
             g_identity.provisioning = cfg;
             g_identity.provisioned = true;
@@ -97,7 +102,6 @@ void tryWokwiProvisioning() {
     if (g_identity.provisioned) {
         return;
     }
-
     Serial.printf("Wokwi HTTP pairing via %s\n", LOCALLEXIS_WOKWI_HUB_URL);
     String response;
     locallexis::provisioning::ProvisioningConfig cfg;
@@ -105,60 +109,118 @@ void tryWokwiProvisioning() {
         Serial.printf("Wokwi pairing skipped/failed: %s\n", response.c_str());
         return;
     }
-
     g_store.saveProvisioning(cfg);
     g_identity.provisioning = cfg;
     g_identity.provisioned = true;
     Serial.printf("Wokwi paired as %s for workspace %s\n",
-                  cfg.deviceId.c_str(),
-                  cfg.workspaceId.c_str());
+                  cfg.deviceId.c_str(), cfg.workspaceId.c_str());
 }
 #endif
+
+// ===== Demo path: silent-WAV upload (sim only) =====
+#if defined(LOCALLEXIS_DEMO_SILENT_WAV)
+bool g_uploadedDemo = false;
 
 void uploadDemoWavOnce() {
     if (g_uploadedDemo || !g_identity.provisioned || WiFi.status() != WL_CONNECTED) {
         return;
     }
     g_uploadedDemo = true;
-
     Serial.println("Uploading demo silence WAV to hub...");
     const auto wav = locallexis::net::makeSilenceWav(16000, 1);
     String response;
     locallexis::net::SignedHttpClient client;
     const bool ok = client.uploadWav(
-        g_identity.provisioning,
-        g_identity.keys,
-        "esp32-demo.wav",
-        wav,
-        response
-    );
+        g_identity.provisioning, g_identity.keys, "esp32-demo.wav", wav, response);
     Serial.printf("Upload result: %s\n%s\n", ok ? "ok" : "failed", response.c_str());
 }
+#endif
 
-#if !defined(LOCALLEXIS_WOKWI_SIM)
-void enqueueDemoOnce() {
-    if (g_demoEnqueued || !g_identity.provisioned || !g_sdQueue.ready()) {
-        return;
+// ===== Live recorder (real device) =====
+#if !defined(LOCALLEXIS_DEMO_SILENT_WAV)
+using locallexis::audio::RecState;
+using locallexis::audio::StopReason;
+using locallexis::audio::WavSink;
+
+locallexis::audio::Es8311Codec g_codec(
+    LOCALLEXIS_I2C_SDA, LOCALLEXIS_I2C_SCL, LOCALLEXIS_AUDIO_PWR, LOCALLEXIS_ES8311_ADDR);
+locallexis::audio::I2SCapture g_capture(
+    locallexis::audio::I2SPins{
+        LOCALLEXIS_I2S_MCLK, LOCALLEXIS_I2S_BCLK, LOCALLEXIS_I2S_WS, LOCALLEXIS_I2S_DIN},
+    LOCALLEXIS_AUDIO_SAMPLE_RATE);
+locallexis::input::BootButton g_button(LOCALLEXIS_BOOT_BTN);
+locallexis::ui::RecorderUi g_ui(
+    locallexis::ui::EpdPins{
+        LOCALLEXIS_EPD_BUSY, LOCALLEXIS_EPD_RST, LOCALLEXIS_EPD_DC, LOCALLEXIS_EPD_CS,
+        LOCALLEXIS_EPD_SCK, LOCALLEXIS_EPD_MOSI, LOCALLEXIS_EPD_PWR},
+    LOCALLEXIS_LED);
+
+// SD-or-PSRAM chooser. Owns both sinks; hands a NON-owning pointer to the session for
+// the duration of one recording (sinks are reusable after close()/discard()).
+class MainSinkFactory : public locallexis::audio::SinkFactory {
+public:
+    bool sdReady() const override { return g_sdQueue.ready(); }
+    WavSink* makeSink(bool sd) override {
+        return sd ? static_cast<WavSink*>(&fileSink_) : static_cast<WavSink*>(&memSink_);
     }
-    const auto wav = locallexis::net::makeSilenceWav(16000, 1);
-    String path;
-    if (g_sdQueue.enqueue(wav, &path)) {
-        g_demoEnqueued = true;
-        Serial.printf("Enqueued demo WAV to SD: %s\n", path.c_str());
-    }
+private:
+    locallexis::audio::WavFileSink fileSink_{
+        g_sdQueue, LOCALLEXIS_AUDIO_SAMPLE_RATE, 1, LOCALLEXIS_AUDIO_SD_CAP_BYTES};
+    locallexis::audio::WavMemorySink memSink_{
+        LOCALLEXIS_AUDIO_SAMPLE_RATE, 1, LOCALLEXIS_AUDIO_NOSD_CAP_BYTES};
+};
+MainSinkFactory g_sinks;
+locallexis::audio::RecordingSession g_session(g_codec, g_capture, g_button, g_sinks);
+
+// Single-slot upload buffer for a PSRAM clip recorded while no card was present.
+std::optional<std::vector<uint8_t>> g_pendingClip;
+String g_pendingClipName;
+
+String makeClipName() {
+    return String("rec-") + String(static_cast<unsigned long>(time(nullptr))) + ".wav";
 }
 
-void drainQueueStep() {
-    if (!g_sdQueue.ready()
-        || !g_identity.provisioned
-        || WiFi.status() != WL_CONNECTED) {
-        return;
+void onClipReady(WavSink& sink) {
+    if (!sink.isMemoryBacked()) {
+        return;  // file sink already committed Q<NNNN>.wav to the queue; drain handles it.
     }
+    if (g_pendingClip.has_value()) {
+        Serial.println("Recorder: overwriting an un-uploaded PSRAM clip (no card; single slot).");
+    }
+    g_pendingClip = sink.takeBytes();
+    g_pendingClipName = makeClipName();
+    Serial.printf("Recorder: PSRAM clip ready (%u bytes), pending upload\n",
+                  static_cast<unsigned>(g_pendingClip->size()));
+}
 
-    String path;
-    if (!g_sdQueue.peekOldestPath(path)) {
+void uploadPendingClipStep() {
+    if (!g_pendingClip.has_value()) return;
+    if (!g_identity.provisioned || WiFi.status() != WL_CONNECTED) return;
+
+    String response;
+    locallexis::net::SignedHttpClient client;
+    const bool ok = client.uploadWav(
+        g_identity.provisioning, g_identity.keys, g_pendingClipName, *g_pendingClip, response);
+    const int status = locallexis::net::httpStatusFromResponse(std::string(response.c_str()));
+    Serial.printf("PSRAM clip upload: %s (HTTP %d)\n%s\n",
+                  ok ? "ok" : "failed", status, response.c_str());
+
+    if (ok || (status >= 400 && status < 500)) {
+        g_pendingClip.reset();  // success OR unretryable client error -> drop
+    } else {
+        delay(2000);            // transient -> retry next loop
+    }
+}
+#endif  // !LOCALLEXIS_DEMO_SILENT_WAV
+
+// ===== SD drain (real device) =====
+#if !defined(LOCALLEXIS_WOKWI_SIM)
+void drainQueueStep() {
+    if (!g_sdQueue.ready() || !g_identity.provisioned || WiFi.status() != WL_CONNECTED) {
         return;
     }
+    String path;
+    if (!g_sdQueue.peekOldestPath(path)) return;
 
     auto reader = g_sdQueue.openReader(path);
     if (!reader) {
@@ -166,28 +228,26 @@ void drainQueueStep() {
         delay(2000);
         return;
     }
-
     const int slash = path.lastIndexOf('/');
     const String filename = slash >= 0 ? path.substring(slash + 1) : path;
 
     Serial.printf("Draining %s (%u bytes)\n",
-                  filename.c_str(),
-                  static_cast<unsigned>(reader->size()));
+                  filename.c_str(), static_cast<unsigned>(reader->size()));
     String response;
     locallexis::net::SignedHttpClient client;
     const bool ok = client.uploadWav(
-        g_identity.provisioning,
-        g_identity.keys,
-        filename,
-        *reader,
-        response
-    );
-    Serial.printf("Drain result: %s\n%s\n", ok ? "ok" : "failed", response.c_str());
+        g_identity.provisioning, g_identity.keys, filename, *reader, response);
+    const int status = locallexis::net::httpStatusFromResponse(std::string(response.c_str()));
+    Serial.printf("Drain result: %s (HTTP %d)\n%s\n",
+                  ok ? "ok" : "failed", status, response.c_str());
 
     if (ok) {
         g_sdQueue.removeFile(path);
+    } else if (status >= 400 && status < 500) {
+        Serial.printf("Drain: hub rejected %s (HTTP %d); discarding\n", filename.c_str(), status);
+        g_sdQueue.removeFile(path);  // unretryable: drop so the queue cannot wedge
     } else {
-        delay(2000);
+        delay(2000);  // transient (5xx / network) -> retry next loop
     }
 }
 #endif
@@ -210,18 +270,22 @@ void setup() {
     g_store.load(g_identity);
 
 #if !defined(LOCALLEXIS_WOKWI_SIM)
-    g_sdQueue.begin(
-        LOCALLEXIS_SD_CLK,
-        LOCALLEXIS_SD_CMD,
-        LOCALLEXIS_SD_D0
-    );
+    g_sdQueue.begin(LOCALLEXIS_SD_CLK, LOCALLEXIS_SD_CMD, LOCALLEXIS_SD_D0);
 #endif
 
     const String pubkeyB64 = locallexis::crypto::base64Encode(
-        g_identity.keys.publicKey,
-        sizeof(g_identity.keys.publicKey)
-    );
+        g_identity.keys.publicKey, sizeof(g_identity.keys.publicKey));
     Serial.printf("Device public key: %s\n", pubkeyB64.c_str());
+
+#if !defined(LOCALLEXIS_DEMO_SILENT_WAV)
+    // Live recorder: bring up UI + button, wire callbacks, arm for the first tap.
+    g_ui.begin();
+    g_button.begin();
+    g_button.arm();  // Standby is tap-ready; the session re-arms on every state change.
+    g_capture.setPcmCallback([](const uint8_t* b, size_t n) { g_session.onPcm(b, n); });
+    g_session.setOnState([](RecState s, StopReason r) { g_ui.onState(s, r); });
+    g_session.setOnClip(onClipReady);
+#endif
 
     if (!g_identity.provisioned) {
 #if defined(LOCALLEXIS_WOKWI_SIM)
@@ -241,13 +305,7 @@ void setup() {
         tryWokwiProvisioning();
 #endif
         if (syncClock()) {
-#if !defined(LOCALLEXIS_WOKWI_SIM)
-            if (g_sdQueue.ready()) {
-                enqueueDemoOnce();
-            } else {
-                uploadDemoWavOnce();
-            }
-#else
+#if defined(LOCALLEXIS_DEMO_SILENT_WAV)
             uploadDemoWavOnce();
 #endif
         }
@@ -255,17 +313,31 @@ void setup() {
 }
 
 void loop() {
-    if (g_identity.provisioned && WiFi.status() == WL_CONNECTED) {
-#if !defined(LOCALLEXIS_WOKWI_SIM)
-        if (g_sdQueue.ready()) {
-            enqueueDemoOnce();
-            drainQueueStep();
-        } else {
-            uploadDemoWavOnce();
-        }
-#else
-        uploadDemoWavOnce();
+#if !defined(LOCALLEXIS_DEMO_SILENT_WAV)
+    if (g_button.consumeTap()) {
+        g_session.toggle();
+    }
+    g_capture.pump();  // drain I2S ringbuffer -> g_session.onPcm (single-threaded; no-op when stopped)
+    g_ui.tick();       // LED blink + transient error-screen timeout
 #endif
+
+    const bool online = g_identity.provisioned && WiFi.status() == WL_CONNECTED;
+#if defined(LOCALLEXIS_DEMO_SILENT_WAV)
+    if (online) {
+        uploadDemoWavOnce();
     }
     delay(1000);
+#elif !defined(LOCALLEXIS_WOKWI_SIM)
+    // Upload only while idle so a blocking upload never starves capture.pump().
+    if (online && g_session.state() == RecState::Standby) {
+        if (g_sdQueue.ready()) {
+            drainQueueStep();
+        } else {
+            uploadPendingClipStep();
+        }
+    }
+    delay(5);  // keep pump() latency low; the ring is ~1 s deep
+#else
+    delay(5);
+#endif
 }
