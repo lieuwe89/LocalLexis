@@ -5,6 +5,7 @@ namespace locallexis::input {
 namespace {
 constexpr uint32_t kDebounceMs = 30;
 constexpr uint32_t kTapMaxMs = 800;
+constexpr uint32_t kHoldMs = 500;
 }  // namespace
 
 BootButton::BootButton(int pin) : pin_(pin) {}
@@ -25,8 +26,10 @@ void IRAM_ATTR BootButton::onEdge() {
         pressMs_ = now;
     } else {
         const uint32_t held = now - pressMs_;
-        if (held >= kDebounceMs && held <= kTapMaxMs) {
-            tapPending_ = true;
+        if (held >= kHoldMs) {
+            holdPending_ = true;                       // long-press => hold
+        } else if (held >= kDebounceMs && held <= kTapMaxMs) {
+            tapPending_ = true;                        // short-press => tap
         }
     }
 }
@@ -34,6 +37,13 @@ void IRAM_ATTR BootButton::onEdge() {
 bool BootButton::consumeTap() {
     if (!tapPending_) return false;
     tapPending_ = false;
+    if (!armed_) return false;
+    return true;
+}
+
+bool BootButton::consumeHold() {
+    if (!holdPending_) return false;
+    holdPending_ = false;
     if (!armed_) return false;
     return true;
 }

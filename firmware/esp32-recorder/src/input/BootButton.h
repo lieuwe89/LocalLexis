@@ -19,6 +19,9 @@ public:
     // Returns true once per completed tap (only while armed). Call every loop.
     bool consumeTap();
 
+    // Returns true once per completed hold (press held >= kHoldMs), only while armed.
+    bool consumeHold();
+
 private:
     static void IRAM_ATTR isrThunk(void* arg);
     void IRAM_ATTR onEdge();
@@ -27,6 +30,7 @@ private:
     volatile bool armed_ = false;
     volatile uint32_t pressMs_ = 0;
     volatile bool tapPending_ = false;
+    volatile bool holdPending_ = false;
 };
 
 }  // namespace locallexis::input
