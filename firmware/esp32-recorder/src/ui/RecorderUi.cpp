@@ -21,9 +21,12 @@ constexpr uint32_t kSavedMs = 2400;
 GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT>* g_display = nullptr;
 
 inline uint16_t inkColor(bool panelInverted, bool runInverted) {
-    // On a normal panel: a non-inverted run is BLACK ink. On an inverted (ink)
-    // panel: a "paper ink" run (run.invert==true) is WHITE. XOR resolves both.
-    return (panelInverted ^ runInverted) ? GxEPD_WHITE : GxEPD_BLACK;
+    // ScreenLayout uses ABSOLUTE ink: run.invert==true => white (paper), false =>
+    // black (ink), independent of the panel fill (fillScreen handles the fill).
+    // The REC pill is the only "inverse within inverse": the blitter paints its
+    // white rect explicitly and its text is invert=false (black) on top.
+    (void)panelInverted;
+    return runInverted ? GxEPD_WHITE : GxEPD_BLACK;
 }
 }  // namespace
 
@@ -58,6 +61,7 @@ void RecorderUi::blit(const UiModel& model) {
     if (!g_display) return;
     const DrawList d = layoutFor(model);
     g_display->setFullWindow();
+    g_display->setTextWrap(false);  // clip overflow at the edge; never wrap to a new line
     g_display->firstPage();
     do {
         g_display->fillScreen(d.invertPanel ? GxEPD_BLACK : GxEPD_WHITE);
@@ -98,6 +102,7 @@ void RecorderUi::onState(RecState state, StopReason reason) {
         if (reason == StopReason::Full) {
             current_.screen = Screen::Storage;     // cap-hit maps to Storage (DECISION)
             show(current_);
+            autoAdvanceAtMs_ = millis() + kSavedMs;  // not a dead-end: return to Idle
         } else if (reason == StopReason::Error) {
             current_.screen = Screen::Storage;     // start-fail/SD error surface (DECISION seam)
             show(current_);

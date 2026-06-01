@@ -181,6 +181,11 @@ String g_pendingClipName;
 // Display-only clip counter (zero-padded to 3 on screen).
 uint16_t g_uiClip = 0;
 
+// Double-tap in Standby => manual sync. Detected in loop(), no ISR change.
+uint32_t g_lastTapMs = 0;
+bool g_manualSync = false;
+constexpr uint32_t kDoubleTapMs = 400;
+
 String makeClipName() {
     return String("rec-") + String(static_cast<unsigned long>(time(nullptr))) + ".wav";
 }
@@ -347,10 +352,18 @@ void loop() {
             g_session.toggle();             // -> Recording; emitState renders via onState
         }
     }
-    // Short tap => stop recording (only meaningful in Recording).
+    // Short tap => stop recording (Recording); double-tap => manual sync (Standby).
     if (g_button.consumeTap()) {
         if (g_session.state() == RecState::Recording) {
             g_session.toggle();             // -> Standby; onClip+onState populate Saved
+        } else if (g_session.state() == RecState::Standby) {
+            const uint32_t now = millis();
+            if (g_lastTapMs != 0 && now - g_lastTapMs <= kDoubleTapMs) {
+                g_manualSync = true;        // two quick taps in Standby
+                g_lastTapMs = 0;
+            } else {
+                g_lastTapMs = now;          // first tap; wait for a second
+            }
         }
     }
     g_capture.pump();  // drain I2S ringbuffer -> g_session.onPcm (single-threaded; no-op when stopped)
@@ -365,11 +378,21 @@ void loop() {
     delay(1000);
 #elif !defined(LOCALLEXIS_WOKWI_SIM)
     // Upload only while idle so a blocking upload never starves capture.pump().
-    if (online && g_session.state() == RecState::Standby) {
-        if (g_sdQueue.ready()) {
-            drainQueueStep();
-        } else {
-            uploadPendingClipStep();
+    if (g_session.state() == RecState::Standby) {
+        if (g_manualSync) {
+            g_manualSync = false;
+            g_ui.showSyncing(0, 1);          // double-tap feedback (even offline)
+            if (online) {
+                if (g_sdQueue.ready()) drainQueueStep();
+                else uploadPendingClipStep();
+            }
+            g_ui.showIdle();
+        } else if (online) {
+            if (g_sdQueue.ready()) {
+                drainQueueStep();
+            } else {
+                uploadPendingClipStep();
+            }
         }
     }
     delay(5);  // keep pump() latency low; the ring is ~1 s deep
