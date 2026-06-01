@@ -8,7 +8,7 @@ namespace locallexis::storage {
 namespace {
 constexpr const char* kPrefsNs = "ll_sdq";
 constexpr const char* kPrefsKey = "next";
-constexpr uint64_t kMaxFileBytes = 4ULL * 1024 * 1024;
+constexpr uint64_t kMaxFileBytes = 256ULL * 1024 * 1024;  // 256 MiB (matches hub DEFAULT_MAX_UPLOAD_BYTES)
 constexpr float kUsageHardCap = 0.95f;
 
 String joinPath(const String& dir, const String& name) {
@@ -152,6 +152,35 @@ std::unique_ptr<SdFileBodySource> SdQueue::openReader(const String& path) {
     if (!f) return nullptr;
     auto file = std::unique_ptr<FileLike>(new SdFile(f));
     return std::unique_ptr<SdFileBodySource>(new SdFileBodySource(std::move(file)));
+}
+
+std::unique_ptr<SdFileWriter> SdQueue::openWriter(String& outFinalPath) {
+    if (!ready_) return nullptr;
+
+    const uint64_t total = SD_MMC.totalBytes();
+    if (total > 0) {
+        const uint64_t used = SD_MMC.usedBytes();
+        const float ratio = static_cast<float>(used) / static_cast<float>(total);
+        if (ratio >= kUsageHardCap) {
+            Serial.printf("SD over %.0f%% used; refusing openWriter\n", kUsageHardCap * 100.f);
+            return nullptr;
+        }
+    }
+
+    const String stem = nextFilenameStem();
+    const String finalPath = joinPath(queueDir_, stem + ".wav");
+    const String partialPath = joinPath(queueDir_, stem + ".wav.partial");
+
+    File f = SD_MMC.open(partialPath, FILE_WRITE);
+    if (!f) {
+        Serial.printf("SD queue openWriter failed: %s\n", partialPath.c_str());
+        return nullptr;
+    }
+
+    ++nextN_;
+    prefs_.putULong64(kPrefsKey, nextN_);
+    outFinalPath = finalPath;
+    return std::unique_ptr<SdFileWriter>(new SdFileWriter(f, finalPath, partialPath));
 }
 
 bool SdQueue::removeFile(const String& path) {

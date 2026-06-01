@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "storage/SdFileBodySource.h"
+#include "storage/SdFileWriter.h"
 
 namespace locallexis::storage {
 
@@ -28,6 +29,10 @@ public:
     // Opens a streaming reader for ``path`` (must be inside the queue dir).
     // Returns nullptr if the file cannot be opened.
     std::unique_ptr<SdFileBodySource> openReader(const String& path);
+
+    // Opens a streaming writer for a fresh Q<NNNN>.wav.partial. The reserved
+    // final path is returned in outFinalPath. nullptr if the file cannot open.
+    std::unique_ptr<SdFileWriter> openWriter(String& outFinalPath);
 
     bool removeFile(const String& path);
     QueueStats stats();
