@@ -91,29 +91,6 @@
 #define LOCALLEXIS_LED 3        // active-LOW
 #endif
 
-// ePaper (GxEPD2_154_D67) — same wiring as hello_screen.cpp. EPD_PWR active-LOW.
-#ifndef LOCALLEXIS_EPD_BUSY
-#define LOCALLEXIS_EPD_BUSY 8
-#endif
-#ifndef LOCALLEXIS_EPD_RST
-#define LOCALLEXIS_EPD_RST 9
-#endif
-#ifndef LOCALLEXIS_EPD_DC
-#define LOCALLEXIS_EPD_DC 10
-#endif
-#ifndef LOCALLEXIS_EPD_CS
-#define LOCALLEXIS_EPD_CS 11
-#endif
-#ifndef LOCALLEXIS_EPD_SCK
-#define LOCALLEXIS_EPD_SCK 12
-#endif
-#ifndef LOCALLEXIS_EPD_MOSI
-#define LOCALLEXIS_EPD_MOSI 13
-#endif
-#ifndef LOCALLEXIS_EPD_PWR
-#define LOCALLEXIS_EPD_PWR 6
-#endif
-
 // Per-clip size caps. SD path matches hub DEFAULT_MAX_UPLOAD_BYTES; no-SD path is a
 // safe contiguous PSRAM allocation.
 #ifndef LOCALLEXIS_AUDIO_SD_CAP_BYTES
