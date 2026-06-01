@@ -23,7 +23,7 @@ GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT>* g_display = nullptr;
 inline uint16_t inkColor(bool panelInverted, bool runInverted) {
     // On a normal panel: a non-inverted run is BLACK ink. On an inverted (ink)
     // panel: a "paper ink" run (run.invert==true) is WHITE. XOR resolves both.
-    return (panelInverted ^ runInverted) ? GxEPD_BLACK : GxEPD_WHITE;
+    return (panelInverted ^ runInverted) ? GxEPD_WHITE : GxEPD_BLACK;
 }
 }  // namespace
 
