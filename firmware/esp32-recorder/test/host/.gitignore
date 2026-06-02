@@ -6,6 +6,7 @@ test_body_source
 test_wav_writer
 test_http_status
 test_recording_session
+test_dc_blocker
 test_screen_layout
 test_ui_icons
 test_*_clean

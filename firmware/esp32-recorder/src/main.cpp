@@ -14,6 +14,8 @@
 #endif
 #if !defined(LOCALLEXIS_DEMO_SILENT_WAV)
 #include <optional>
+#include <vector>
+#include "audio/DcBlocker.h"
 #include "audio/Es8311Codec.h"
 #include "audio/I2SCapture.h"
 #include "audio/RecordingSession.h"
@@ -178,6 +180,12 @@ locallexis::audio::RecordingSession g_session(g_codec, g_capture, g_button, g_si
 std::optional<std::vector<uint8_t>> g_pendingClip;
 String g_pendingClipName;
 
+// DC-blocking high-pass on the mic stream (kills the ES8311 ~+17k DC offset
+// that otherwise clips transients). Filtered into a reused scratch buffer so
+// the const capture bytes are not mutated. Reset at each record start.
+locallexis::audio::DcBlocker g_dcBlocker;
+std::vector<uint8_t> g_pcmScratch;
+
 // Display-only clip counter (zero-padded to 3 on screen).
 uint16_t g_uiClip = 0;
 
@@ -303,7 +311,11 @@ void setup() {
     g_ui.begin();
     g_button.begin();
     g_button.arm();  // Standby is tap-ready; the session re-arms on every state change.
-    g_capture.setPcmCallback([](const uint8_t* b, size_t n) { g_session.onPcm(b, n); });
+    g_capture.setPcmCallback([](const uint8_t* b, size_t n) {
+        g_pcmScratch.assign(b, b + n);
+        g_dcBlocker.processBytes(g_pcmScratch.data(), g_pcmScratch.size());
+        g_session.onPcm(g_pcmScratch.data(), g_pcmScratch.size());
+    });
     g_session.setOnState([](RecState s, StopReason r) { g_ui.onState(s, r); });
     g_session.setOnClip(onClipReady);
 
@@ -345,6 +357,7 @@ void loop() {
     // Hold (~0.5 s) => start recording (only meaningful in Standby).
     if (g_button.consumeHold()) {
         if (g_session.state() == RecState::Standby) {
+            g_dcBlocker.reset();            // clear filter state for the new clip
             time_t now = time(nullptr);
             struct tm lt; localtime_r(&now, &lt);
             strftime(g_ui.model().startedAt, sizeof(g_ui.model().startedAt), "%-l:%M %p", &lt);
