@@ -88,12 +88,14 @@ bool Es8311Codec::powerOnAndConfigure() {
             return false;
         }
     }
-    setMicGain(0x07);  // ~42 dB default
+    setMicGain(0x02);  // 12 dB: 42 dB railed the PGA on mains hum (silence at -6.5 dBFS)
     Serial.println("ES8311 configured: 16 kHz mono 16-bit ADC");
     return true;
 }
 
 bool Es8311Codec::setMicGain(uint8_t gainCode) {
+    // Reg 0x16 = ADC mic gain, written bare per espressif es8311_set_mic_gain
+    // (gain 0..7 = 0..42 dB in 6 dB steps).
     return writeReg(0x16, gainCode & 0x07);
 }
 

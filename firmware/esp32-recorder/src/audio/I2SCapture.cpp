@@ -30,7 +30,9 @@ bool I2SCapture::start() {
         .sample_rate = sampleRate_,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,   // stereo
-        .communication_format = I2S_COMM_FORMAT_STAND_MSB,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,  // ES8311 SDP=00 is Philips I2S
+                                                             // (1-BCLK delay); MSB here shifted
+                                                             // data 1 bit -> unipolar garbage.
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
         .dma_buf_count = kDmaBufCount,
         .dma_buf_len = kDmaBufLen,
