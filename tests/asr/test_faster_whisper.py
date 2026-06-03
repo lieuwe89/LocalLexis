@@ -91,3 +91,32 @@ def test_falls_back_to_name_when_no_bundled_match(tmp_path: Path, monkeypatch):
         kwargs = Model.call_args.kwargs
         assert kwargs["model_size_or_path"] == "medium"
         assert kwargs["download_root"] == str(tmp_path / "cache")
+
+
+def test_anti_loop_decoding_options(tmp_path: Path):
+    """Regression guard for the runaway-repetition bug.
+
+    A scalar `temperature=0.0` disabled faster-whisper's temperature fallback,
+    so a bad 30s window could not recover and — with condition_on_previous_text
+    feeding it forward — produced an infinite repeated line on long/low-SNR audio.
+    Decoding must therefore keep a temperature *list* (fallback enabled), a hard
+    no-repeat n-gram guard, and prompt reset during fallback, while preserving
+    cross-window coherence.
+    """
+    wav = tmp_path / "x.wav"
+    wav.write_bytes(b"fake")
+    fake_info = MagicMock(language="nl")
+    with patch("faster_whisper.WhisperModel") as Model:
+        instance = Model.return_value
+        instance.transcribe.return_value = (iter([]), fake_info)
+        asr = FasterWhisperASR(model_size="tiny", backend="cpu")
+        asr.transcribe(wav, language="nl")
+        kw = instance.transcribe.call_args.kwargs
+
+    assert isinstance(kw["temperature"], (list, tuple)) and len(kw["temperature"]) > 1, (
+        "temperature must be a list to enable the fallback safety net (scalar disables it)"
+    )
+    assert kw["no_repeat_ngram_size"] == 3
+    assert kw["condition_on_previous_text"] is True
+    assert kw["prompt_reset_on_temperature"] == 0.5
+    assert kw["vad_filter"] is True

@@ -63,7 +63,23 @@ class FasterWhisperASR:
             str(wav_path),
             language=language,
             beam_size=5,
-            temperature=0.0,
+            # Anti-loop safety net. A *scalar* temperature disables faster-whisper's
+            # temperature fallback; a list re-enables it. When a 30s window decodes
+            # too-repetitively (compression_ratio_threshold) or with low confidence
+            # (log_prob_threshold), decoding retries at a higher temperature and —
+            # via prompt_reset_on_temperature — drops the conditioning prompt. That
+            # breaks the feedback loop that otherwise causes runaway repetition on
+            # long / low-SNR / multi-speaker audio, while temp 0 keeps quality.
+            temperature=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+            # Keep cross-window coherence (consistent spelling/terminology), but...
+            condition_on_previous_text=True,
+            # ...reset the prompt during fallback so a bad window can't poison the rest.
+            prompt_reset_on_temperature=0.5,
+            # Hard guard: never emit the same 3-gram back-to-back (kills loops at source).
+            no_repeat_ngram_size=3,
+            compression_ratio_threshold=2.4,
+            log_prob_threshold=-1.0,
+            no_speech_threshold=0.6,
             vad_filter=True,
         )
         duration = float(getattr(info, "duration", 0.0) or 0.0)
