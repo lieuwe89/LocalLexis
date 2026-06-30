@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from speechtotext.asr.faster_whisper import FasterWhisperASR
+from speechtotext.asr.faster_whisper import FasterWhisperASR, _collapse_repetitions
 from speechtotext.models import Segment
 
 
@@ -96,12 +96,12 @@ def test_falls_back_to_name_when_no_bundled_match(tmp_path: Path, monkeypatch):
 def test_anti_loop_decoding_options(tmp_path: Path):
     """Regression guard for the runaway-repetition bug.
 
-    A scalar `temperature=0.0` disabled faster-whisper's temperature fallback,
-    so a bad 30s window could not recover and — with condition_on_previous_text
-    feeding it forward — produced an infinite repeated line on long/low-SNR audio.
-    Decoding must therefore keep a temperature *list* (fallback enabled), a hard
-    no-repeat n-gram guard, and prompt reset during fallback, while preserving
-    cross-window coherence.
+    Two earlier failures led here: (1) a scalar `temperature=0.0` disabled the
+    temperature fallback, and (2) `condition_on_previous_text=True` fed a
+    confident hallucination forward, seeding the same line on every later window
+    — fallback never fired because each window looked fine on its own thresholds.
+    Decoding must keep a temperature *list* (fallback enabled), a hard no-repeat
+    n-gram guard, VAD, and must NOT condition on previous text (the root cause).
     """
     wav = tmp_path / "x.wav"
     wav.write_bytes(b"fake")
@@ -117,6 +117,49 @@ def test_anti_loop_decoding_options(tmp_path: Path):
         "temperature must be a list to enable the fallback safety net (scalar disables it)"
     )
     assert kw["no_repeat_ngram_size"] == 3
-    assert kw["condition_on_previous_text"] is True
-    assert kw["prompt_reset_on_temperature"] == 0.5
+    assert kw["condition_on_previous_text"] is False, (
+        "prompt feed-forward is the root cause of the repetition loop — keep it off"
+    )
     assert kw["vad_filter"] is True
+
+
+def _seg(start: float, end: float, text: str) -> Segment:
+    return Segment(start=start, end=end, text=text, language="nl")
+
+
+def test_collapse_repetitions_kills_runaway_loop():
+    """A long run of identical lines (the observed loop) collapses to one segment."""
+    segs = [_seg(float(i), float(i + 1), "Bedankt voor het kijken.") for i in range(40)]
+    out = _collapse_repetitions(segs)
+    assert len(out) == 1
+    assert out[0].text == "Bedankt voor het kijken."
+    assert out[0].start == 0.0
+    assert out[0].end == 40.0  # spans the whole collapsed run
+
+
+def test_collapse_repetitions_is_punctuation_and_case_insensitive():
+    segs = [_seg(0, 1, "Okay."), _seg(1, 2, "okay"), _seg(2, 3, "OKAY!")]
+    out = _collapse_repetitions(segs)
+    assert len(out) == 1
+
+
+def test_collapse_repetitions_preserves_normal_speech():
+    """Genuine varied speech and short (<3) repeats pass through untouched."""
+    segs = [_seg(0, 1, "hello"), _seg(1, 2, "world"), _seg(2, 3, "hello")]
+    out = _collapse_repetitions(segs)
+    assert [s.text for s in out] == ["hello", "world", "hello"]
+
+    twice = [_seg(0, 1, "ja"), _seg(1, 2, "ja")]
+    assert len(_collapse_repetitions(twice)) == 2  # 2 < limit, kept
+
+
+def test_collapse_repetitions_collapses_only_the_loop_run():
+    """A loop in the middle collapses; surrounding real speech survives in order."""
+    segs = (
+        [_seg(0, 1, "intro sentence")]
+        + [_seg(float(i), float(i + 1), "loop") for i in range(1, 6)]
+        + [_seg(6, 7, "outro sentence")]
+    )
+    out = _collapse_repetitions(segs)
+    assert [s.text for s in out] == ["intro sentence", "loop", "outro sentence"]
+    assert out[1].start == 1.0 and out[1].end == 6.0

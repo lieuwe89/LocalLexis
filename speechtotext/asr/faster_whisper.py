@@ -1,11 +1,61 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 from pathlib import Path
 from typing import Callable, Literal
 
 from speechtotext.models import Segment
+
+# A run of this many back-to-back segments with identical normalised text is
+# almost certainly a decoder repetition loop, not real speech. Collapse it.
+_REPEAT_RUN_LIMIT = 3
+_NORMALISE_RE = re.compile(r"[^\w\s]")
+_WS_RE = re.compile(r"\s+")
+
+
+def _normalise(text: str) -> str:
+    """Case/punctuation/whitespace-insensitive key for repetition detection."""
+    return _WS_RE.sub(" ", _NORMALISE_RE.sub("", text.lower())).strip()
+
+
+def _collapse_repetitions(segments: list[Segment]) -> list[Segment]:
+    """Decoder-independent anti-loop net.
+
+    Whisper repetition loops surface as the *same line emitted over and over*
+    across consecutive windows. Decoder options (temperature fallback, prompt
+    reset, no_repeat_ngram) reduce but do not guarantee elimination — a
+    confident hallucination can slip past every threshold. This collapses any
+    run of >= `_REPEAT_RUN_LIMIT` consecutive segments sharing the same
+    normalised text into a single segment spanning the run, so a runaway loop
+    can never reach the transcript regardless of decoder behaviour.
+    """
+    if not segments:
+        return segments
+    out: list[Segment] = []
+    i = 0
+    n = len(segments)
+    while i < n:
+        j = i + 1
+        key = _normalise(segments[i].text)
+        while j < n and key and _normalise(segments[j].text) == key:
+            j += 1
+        run = j - i
+        if run >= _REPEAT_RUN_LIMIT:
+            first = segments[i]
+            out.append(
+                Segment(
+                    start=first.start,
+                    end=segments[j - 1].end,
+                    text=first.text,
+                    language=first.language,
+                )
+            )
+        else:
+            out.extend(segments[i:j])
+        i = j
+    return out
 
 
 def _resolve_bundled_model(name: str) -> str | None:
@@ -66,15 +116,17 @@ class FasterWhisperASR:
             # Anti-loop safety net. A *scalar* temperature disables faster-whisper's
             # temperature fallback; a list re-enables it. When a 30s window decodes
             # too-repetitively (compression_ratio_threshold) or with low confidence
-            # (log_prob_threshold), decoding retries at a higher temperature and —
-            # via prompt_reset_on_temperature — drops the conditioning prompt. That
-            # breaks the feedback loop that otherwise causes runaway repetition on
-            # long / low-SNR / multi-speaker audio, while temp 0 keeps quality.
+            # (log_prob_threshold), decoding retries at a higher temperature. That
+            # lets a bad window recover instead of emitting garbage, while temp 0
+            # keeps quality on good windows.
             temperature=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
-            # Keep cross-window coherence (consistent spelling/terminology), but...
-            condition_on_previous_text=True,
-            # ...reset the prompt during fallback so a bad window can't poison the rest.
-            prompt_reset_on_temperature=0.5,
+            # PRIMARY loop fix: do NOT feed prior text forward as a prompt. Prompt
+            # feed-forward is the root cause of runaway repetition — a confident
+            # hallucination on one window seeds the same line on every window after
+            # it, and fallback never triggers because the bad output looks fine on
+            # its own thresholds. Disabling conditioning costs a little cross-window
+            # spelling consistency but structurally prevents the loop.
+            condition_on_previous_text=False,
             # Hard guard: never emit the same 3-gram back-to-back (kills loops at source).
             no_repeat_ngram_size=3,
             compression_ratio_threshold=2.4,
@@ -98,4 +150,6 @@ class FasterWhisperASR:
             if on_progress and duration > 0:
                 pct = min(1.0, float(s.end) / duration)
                 on_progress(pct)
-        return out
+        # Final, decoder-independent guard: collapse any repetition loop that
+        # slipped past the decoder options above before it reaches the caller.
+        return _collapse_repetitions(out)
