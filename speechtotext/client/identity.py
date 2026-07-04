@@ -64,6 +64,8 @@ def _save(ident: DeviceIdentity) -> None:
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(json.dumps(payload))
+        fh.flush()
+        os.fsync(fd)
     os.replace(tmp, path)
 
 
