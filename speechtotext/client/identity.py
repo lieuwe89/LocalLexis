@@ -61,8 +61,9 @@ def _save(ident: DeviceIdentity) -> None:
     if ident._workspace_key_b64 is not None:
         payload["workspace_key_b64"] = ident._workspace_key_b64
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload), encoding="utf-8")
-    os.chmod(tmp, 0o600)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload))
     os.replace(tmp, path)
 
 
