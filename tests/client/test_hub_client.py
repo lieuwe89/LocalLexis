@@ -2,6 +2,7 @@ import base64
 import hashlib
 
 import httpx
+import pytest
 from nacl.signing import SigningKey
 
 from speechtotext.api.auth import build_signed_message
@@ -70,3 +71,41 @@ def test_client_upload_streams_file(tmp_path):
     assert out["path"] == "/jobs/upload"
     assert out["query"] == "filename=rec.wav"
     assert out["body_len"] == 104
+
+
+def test_client_patch_json_signs_and_sends_json():
+    sk = SigningKey.generate()
+    client = HubClient(
+        "http://hub:8010", "dev-1", sk, transport=_echo_transport()
+    )
+    out = client.patch_json("/transcripts/t1", {"op": "relabel"})
+    assert out["method"] == "PATCH"
+    assert out["path"] == "/transcripts/t1"
+    assert out["device"] == "dev-1"
+    assert out["has_sig"] is True
+    assert out["body_len"] == len(b'{"op": "relabel"}')
+
+
+def test_client_raises_on_error_status():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"detail": "unknown device"})
+
+    sk = SigningKey.generate()
+    client = HubClient(
+        "http://hub:8010", "dev-1", sk,
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        client.get_json("/sync/since/0.0")
+
+
+def test_upload_filename_with_space_is_percent_encoded(tmp_path):
+    audio = tmp_path / "my rec.wav"
+    audio.write_bytes(b"RIFF00")
+    sk = SigningKey.generate()
+    client = HubClient(
+        "http://hub:8010", "dev-1", sk, transport=_echo_transport()
+    )
+    out = client.upload_audio(audio)
+    assert out["query"] == "filename=my%20rec.wav"

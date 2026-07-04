@@ -16,6 +16,7 @@ import secrets
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -98,9 +99,11 @@ class HubClient:
         return resp.json()
 
     def upload_audio(self, audio_path: Path) -> Any:
+        # The file must not change between this hashing pass and the
+        # streamed read below — a mismatch makes the hub reject with 401.
         digest = _file_sha256(audio_path)
         size = audio_path.stat().st_size
-        target = f"/jobs/upload?filename={audio_path.name}"
+        target = f"/jobs/upload?filename={quote(audio_path.name, safe='')}"
         headers = signed_headers(
             self._sk, self.device_id, "POST", target, body_sha256=digest
         )
