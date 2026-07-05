@@ -77,3 +77,35 @@ def test_stop_terminates_thread_quickly():
     t0 = time.time()
     rt.stop()
     assert time.time() - t0 < 2.0
+
+
+def test_start_after_self_exit_restarts_without_explicit_stop():
+    """Runtime self-exits when the hub is left mid-run; a later start()
+    (without an intervening stop()) must actually restart the loop, not
+    silently no-op because the old Thread object is still non-None."""
+    _join_locally()
+    fake = FakeHubClient()
+    rt = hub_runtime.HubRuntime(
+        hub_client_factory=lambda st, ident: fake,
+        period_s=3600.0,
+    )
+    rt.start()
+    # Simulate leaving the hub: the loop's next cycle sees no state and
+    # self-exits without going through stop().
+    from speechtotext.client import state as state_module
+
+    state_module.delete()
+    from speechtotext.client import identity as identity_module
+
+    identity_module.delete()
+    rt.poke()
+    deadline = time.time() + 5.0
+    while time.time() < deadline and rt._thread is not None and rt._thread.is_alive():
+        time.sleep(0.02)
+    assert rt._thread is None or not rt._thread.is_alive()
+
+    # Rejoin, then start() again WITHOUT calling stop() first.
+    _join_locally()
+    rt.start()
+    assert rt._thread is not None and rt._thread.is_alive()
+    rt.stop()

@@ -53,7 +53,7 @@ class HubRuntime:
         return state_module.load() is not None
 
     def start(self) -> None:
-        if self._thread is not None or not self.joined():
+        if (self._thread is not None and self._thread.is_alive()) or not self.joined():
             return
         self._stop.clear()
         self._thread = threading.Thread(
