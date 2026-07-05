@@ -11,6 +11,7 @@ import {
   type RecorderProvisioning,
 } from '../lib/recorderProvisioning';
 import { QRCodeSVG } from 'qrcode.react';
+import { hubStatus, joinHub, leaveHub, type HubClientStatus } from '../lib/hubClient';
 
 interface HubState {
   enabled: boolean;
@@ -116,6 +117,11 @@ export function SettingsScreen() {
   const [bleError, setBleError] = useState<string | null>(null);
   const [bleStatus, setBleStatus] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [clientHub, setClientHub] = useState<HubClientStatus | null>(null);
+  const [pairingString, setPairingString] = useState('');
+  const [joinDeviceName, setJoinDeviceName] = useState('');
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -136,6 +142,12 @@ export function SettingsScreen() {
       .then(r => setDevices(r.devices))
       .catch(() => setDevices([]));
   }, [hub?.enabled]);
+  // Load client-hub status once on mount. Failure is silent — older
+  // sidecars without the /client/hub route leave `clientHub` null and the
+  // card just shows the "not joined" state.
+  useEffect(() => {
+    hubStatus().then(setClientHub).catch(() => setClientHub(null));
+  }, []);
   if (!cfg) return <div className="settings"><p style={{ color: 'var(--ink-muted)' }}>Loading…</p></div>;
 
   const toggleHub = async (enabled: boolean) => {
@@ -159,6 +171,30 @@ export function SettingsScreen() {
       setPairingError(`failed to ${enabled ? 'enable' : 'disable'} hub: ${e}`);
     } finally {
       setHubBusy(false);
+    }
+  };
+
+  const doJoinHub = async () => {
+    setJoinBusy(true);
+    setJoinError(null);
+    try {
+      await joinHub(pairingString.trim(), joinDeviceName.trim() || 'desktop');
+      setClientHub(await hubStatus());
+      setPairingString('');
+    } catch (e) {
+      setJoinError(`join failed: ${e}`);
+    } finally {
+      setJoinBusy(false);
+    }
+  };
+
+  const doLeaveHub = async () => {
+    setJoinBusy(true);
+    try {
+      await leaveHub();
+      setClientHub(await hubStatus());
+    } finally {
+      setJoinBusy(false);
     }
   };
 
@@ -555,6 +591,59 @@ export function SettingsScreen() {
           )}
         </section>
       )}
+
+      <section className="join-hub" style={{ marginTop: '2rem', borderTop: '1px solid var(--rule)', paddingTop: '1.25rem' }}>
+        <h2 style={{ margin: '0 0 0.5rem' }}>Join a hub</h2>
+        {clientHub?.joined ? (
+          <div>
+            <p style={{ color: 'var(--ink-muted)', marginTop: 0 }}>
+              Connected to <code>{clientHub.hub_url}</code> as{' '}
+              <code>{clientHub.device_name}</code>
+            </p>
+            <p style={{ color: 'var(--ink-muted)' }}>
+              {clientHub.pending_uploads
+                ? `${clientHub.pending_uploads} recording(s) waiting for hub`
+                : 'All uploads sent'}
+              {clientHub.last_error ? ` — ${clientHub.last_error}` : ''}
+            </p>
+            <button type="button" onClick={doLeaveHub} disabled={joinBusy}>
+              Leave hub
+            </button>
+          </div>
+        ) : (
+          <div>
+            <p style={{ color: 'var(--ink-muted)', marginTop: 0 }}>
+              Paste a pairing code from the hub (run{' '}
+              <code>locallexis-hub pair</code> on the server) to send
+              recordings here for processing and sync transcripts back.
+            </p>
+            <input
+              aria-label="pairing code"
+              value={pairingString}
+              onChange={(e) => setPairingString(e.target.value)}
+              placeholder="pairing code"
+              style={{ display: 'block', marginBottom: '0.5rem' }}
+            />
+            <input
+              aria-label="device name"
+              value={joinDeviceName}
+              onChange={(e) => setJoinDeviceName(e.target.value)}
+              placeholder="device name (e.g. lieuwe-laptop)"
+              style={{ display: 'block', marginBottom: '0.5rem' }}
+            />
+            <button
+              type="button"
+              onClick={doJoinHub}
+              disabled={joinBusy || !pairingString.trim()}
+            >
+              Join
+            </button>
+            {joinError && (
+              <p role="alert" style={{ color: 'var(--ink-error, crimson)' }}>{joinError}</p>
+            )}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

@@ -62,6 +62,9 @@ beforeEach(() => {
     if (path === '/devices/paired') {
       return Promise.resolve({ devices: [] });
     }
+    if (path === '/client/hub') {
+      return Promise.resolve({ joined: false });
+    }
     return Promise.reject(new Error(`unexpected api: ${path}`));
   });
 });
@@ -104,6 +107,9 @@ test('renders a scannable QR after minting a pairing code', async () => {
         tls_spki_b64: 'PIN==',
       });
     }
+    if (path === '/client/hub') {
+      return Promise.resolve({ joined: false });
+    }
     return Promise.reject(new Error(`unexpected api: ${path}`));
   });
 
@@ -113,4 +119,51 @@ test('renders a scannable QR after minting a pairing code', async () => {
   fireEvent.click(mint);
 
   expect(await screen.findByLabelText('Pairing QR code')).toBeInTheDocument();
+});
+
+test('joins a hub from the pairing code + device name inputs', async () => {
+  const joined = {
+    joined: true,
+    hub_url: 'https://hub.example',
+    device_name: 'lieuwe-laptop',
+  };
+  let hasJoined = false;
+  mocks.api.mockImplementation((path: string) => {
+    if (path === '/models/whisper') {
+      return Promise.resolve([{ name: 'base', status: 'bundled', size_mb: 140 }]);
+    }
+    if (path === '/devices/paired') {
+      return Promise.resolve({ devices: [] });
+    }
+    if (path === '/client/hub') {
+      return Promise.resolve(hasJoined ? joined : { joined: false });
+    }
+    if (path === '/client/hub/join') {
+      hasJoined = true;
+      return Promise.resolve(joined);
+    }
+    return Promise.reject(new Error(`unexpected api: ${path}`));
+  });
+
+  render(<SettingsScreen />);
+
+  expect(await screen.findByText('Join a hub')).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText('pairing code'), {
+    target: { value: 'UGFpcg==' },
+  });
+  fireEvent.change(screen.getByLabelText('device name'), {
+    target: { value: 'lieuwe-laptop' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Join' }));
+
+  expect(await screen.findByText(/Connected to/)).toBeInTheDocument();
+  expect(mocks.api).toHaveBeenCalledWith('/client/hub/join', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      pairing_string: 'UGFpcg==',
+      device_name: 'lieuwe-laptop',
+    }),
+  });
 });
