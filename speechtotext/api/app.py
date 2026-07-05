@@ -218,6 +218,14 @@ def create_app(
 
     def _client_factory(st, ident):
         from speechtotext.api import routes_client
+        # Intentionally the RAW transport global, NOT sync_test_transport().
+        # In production _TEST_TRANSPORT is None, so this builds a real
+        # networked HubClient. In tests it is an async-only ASGITransport;
+        # handing that to a synchronous HubClient makes the background
+        # sweep raise on first use (caught, breaks the sweep) so in-test
+        # uploads stay queued deterministically instead of racing the
+        # loopback round-trip. The join ROUTE, which must actually reach
+        # the hub, uses the sync wrapper instead. See routes_client.
         return _HubClient(
             st.hub_url, st.device_id, ident.signing_key(),
             transport=routes_client._TEST_TRANSPORT,
@@ -236,8 +244,13 @@ def create_app(
         rec.percent = 100.0
 
     def _on_synced(paths) -> None:
-        app.state.library_dirs.add(synced_dir())
-        app.state.library_db.sync_dirs(list(app.state.library_dirs))
+        # synced_dir() may not have existed at boot (nothing synced yet),
+        # so ensure it's registered, then re-sync only that dir — matching
+        # _on_complete_dir's single-dir pattern rather than walking every
+        # library dir on each sync tick.
+        d = synced_dir()
+        app.state.library_dirs.add(d)
+        app.state.library_db.sync_dirs([d])
 
     app.state.hub_runtime = HubRuntime(
         hub_client_factory=_client_factory,
