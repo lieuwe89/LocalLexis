@@ -7,6 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
@@ -132,7 +133,11 @@ def _forward_relabel_to_hub(
     """Relabel a hub-origin transcript by forwarding one signed CRDT op
     per speaker to the hub. The hub applies LWW and the updated doc comes
     back on the next sync pull, so we deliberately do NOT write the local
-    synced file here (a local write would be clobbered by that pull)."""
+    synced file here (a local write would be clobbered by that pull).
+
+    Ops are forwarded one-per-speaker and are NOT atomic: a mid-batch hub
+    failure may leave earlier speakers already applied on the hub. The whole
+    mapping is safe to retry (CRDT relabel is last-writer-wins per key)."""
     from speechtotext.api import routes_client
     from speechtotext.client import identity as _identity
     from speechtotext.client import state as _state
@@ -161,12 +166,22 @@ def _forward_relabel_to_hub(
     )
     try:
         for speaker_id, new_name in mapping.items():
-            result = hub.patch_json(f"/transcripts/{tid}", {
-                "op": "relabel",
-                "key": f"speakers.{speaker_id}",
-                "value": new_name,
-                "lamport_observed": observed,
-            })
+            try:
+                result = hub.patch_json(f"/transcripts/{tid}", {
+                    "op": "relabel",
+                    "key": f"speakers.{speaker_id}",
+                    "value": new_name,
+                    "lamport_observed": observed,
+                })
+            except httpx.HTTPStatusError as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"hub rejected relabel: {exc.response.status_code}",
+                ) from exc
+            except httpx.HTTPError as exc:
+                raise HTTPException(
+                    status_code=502, detail=f"cannot reach hub: {exc}"
+                ) from exc
             la = result.get("lamport_assigned")
             if isinstance(la, int):
                 observed = max(observed, la)

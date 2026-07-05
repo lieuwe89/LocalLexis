@@ -60,6 +60,31 @@ def test_relabel_hub_origin_forwards_crdt_op(tmp_path):
         routes_client._TEST_TRANSPORT = None
 
 
+def test_relabel_forward_hub_error_is_502(tmp_path, monkeypatch):
+    """A hub error during the forward surfaces as a clean 502, not an
+    uncaught 500 leaking an httpx stack trace to the UI."""
+    import httpx
+
+    from speechtotext.api import routes_client
+    from speechtotext.client.hub_client import HubClient
+
+    app, client = _joined_app(tmp_path)
+    try:
+        _plant_hub_doc(app)
+
+        def boom(self, path, body):
+            req = httpx.Request("PATCH", "http://hub" + path)
+            resp = httpx.Response(500, request=req)
+            raise httpx.HTTPStatusError("hub boom", request=req, response=resp)
+
+        monkeypatch.setattr(HubClient, "patch_json", boom)
+        resp = client.patch("/transcripts/t1/relabel",
+                            json={"SPEAKER_00": "Alice"})
+        assert resp.status_code == 502, resp.text
+    finally:
+        routes_client._TEST_TRANSPORT = None
+
+
 def test_relabel_local_origin_stays_local(tmp_path):
     """A transcript NOT under synced_dir is relabeled locally even when
     joined — no forward, existing behavior."""
