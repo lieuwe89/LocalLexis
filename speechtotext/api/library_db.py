@@ -78,6 +78,7 @@ _DDL = [
         models_asr      TEXT,
         models_diarizer TEXT,
         error           TEXT,
+        origin          TEXT NOT NULL DEFAULT 'local',
         indexed_at      TEXT NOT NULL
     )
     """,
@@ -217,7 +218,11 @@ class LibraryDB:
     thread and the runner worker threads, so cross-thread access is normal.
     """
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(
+        self, db_path: Path | None = None, *,
+        hub_synced_dir: Path | None = None,
+    ) -> None:
+        self._hub_synced_dir = hub_synced_dir.resolve() if hub_synced_dir else None
         self.path = Path(db_path) if db_path else default_db_path()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
@@ -242,6 +247,14 @@ class LibraryDB:
                     (SCHEMA_VERSION,),
                 )
             # Future migrations: bump SCHEMA_VERSION and branch on row[0].
+        with self._lock, self._conn:
+            try:
+                self._conn.execute(
+                    "ALTER TABLE transcripts "
+                    "ADD COLUMN origin TEXT NOT NULL DEFAULT 'local'"
+                )
+            except sqlite3.OperationalError:
+                pass  # column already exists (new DB created from _DDL)
 
     # ── indexing ──────────────────────────────────────────────────────────
 
@@ -266,6 +279,14 @@ class LibraryDB:
         models = doc.get("models") or {}
         meta = _meta_string(doc, audio_basename)
 
+        origin = "local"
+        if self._hub_synced_dir is not None:
+            try:
+                json_path.resolve().relative_to(self._hub_synced_dir)
+                origin = "hub"
+            except ValueError:
+                pass
+
         with self._lock, self._conn:
             self._conn.execute(
                 """
@@ -273,8 +294,8 @@ class LibraryDB:
                     id, json_path, audio_path, audio_basename,
                     duration_seconds, language, speakers_count, speaker_labels,
                     created_at, json_mtime, json_size,
-                    models_asr, models_diarizer, error, indexed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                    models_asr, models_diarizer, error, origin, indexed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     json_path=excluded.json_path,
                     audio_path=excluded.audio_path,
@@ -289,6 +310,7 @@ class LibraryDB:
                     models_asr=excluded.models_asr,
                     models_diarizer=excluded.models_diarizer,
                     error=NULL,
+                    origin=excluded.origin,
                     indexed_at=excluded.indexed_at
                 """,
                 (
@@ -305,6 +327,7 @@ class LibraryDB:
                     stat.st_size,
                     str(models.get("asr") or "") or None,
                     str(models.get("diarizer") or "") or None,
+                    origin,
                     _now_iso(),
                 ),
             )
@@ -426,7 +449,8 @@ class LibraryDB:
             rows = self._conn.execute(
                 """
                 SELECT id, json_path, audio_path, duration_seconds, language,
-                       speakers_count, created_at, models_asr, models_diarizer, error
+                       speakers_count, created_at, models_asr, models_diarizer,
+                       error, origin
                 FROM transcripts
                 ORDER BY created_at DESC NULLS LAST, indexed_at DESC
                 LIMIT ? OFFSET ?
@@ -444,7 +468,7 @@ class LibraryDB:
                 """
                 SELECT t.id, t.json_path, t.audio_path, t.duration_seconds,
                        t.language, t.speakers_count, t.created_at,
-                       t.models_asr, t.models_diarizer, t.error,
+                       t.models_asr, t.models_diarizer, t.error, t.origin,
                        snippet(transcripts_fts, 0, ?, ?, '…', 24) AS snippet,
                        bm25(transcripts_fts, 4.0, 6.0, 3.0, 2.0) AS rank
                 FROM transcripts_fts
@@ -486,7 +510,7 @@ class LibraryDB:
                 """
                 SELECT id, json_path, audio_path, duration_seconds, language,
                        speakers_count, created_at, models_asr, models_diarizer,
-                       error, json_mtime
+                       error, origin, json_mtime
                 FROM transcripts
                 WHERE json_mtime > ?
                 ORDER BY json_mtime ASC, json_path ASC
@@ -536,6 +560,7 @@ class LibraryDB:
             "speakers": r["speakers_count"] or 0,
             "created_at": r["created_at"],
             "models": models,
+            "origin": (r["origin"] if "origin" in r.keys() else "local"),
         }
         if r["error"]:
             item["error"] = r["error"]
