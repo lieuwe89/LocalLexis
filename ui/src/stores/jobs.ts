@@ -5,6 +5,7 @@ import type { JobRecord, SseEvent } from '../api/types';
 
 interface JobView {
   id: string;
+  kind?: string;
   status: 'pending' | 'running' | 'complete' | 'failed';
   stage: string;
   percent: number;
@@ -41,16 +42,20 @@ export const useJobs = create<JobsState>((set, get) => ({
           return;
         }
         if (rec.status === 'complete') {
-          apply(v => ({ ...v, status: 'complete', stage: rec.stage, percent: rec.percent, paths: rec.paths, transcriptId: rec.transcript_id }));
+          apply(v => ({ ...v, kind: rec.kind ?? v.kind, status: 'complete', stage: rec.stage, percent: rec.percent, paths: rec.paths, transcriptId: rec.transcript_id }));
           clearInterval(poll);
         } else if (rec.status === 'failed') {
-          apply(v => ({ ...v, status: 'failed', stage: rec.stage, error: rec.error }));
+          apply(v => ({ ...v, kind: rec.kind ?? v.kind, status: 'failed', stage: rec.stage, error: rec.error }));
           clearInterval(poll);
         } else if (rec.stage && rec.stage !== current.stage) {
           // SSE missed a stage transition — sync it.
-          apply(v => ({ ...v, status: 'running', stage: rec.stage, percent: rec.percent }));
+          apply(v => ({ ...v, kind: rec.kind ?? v.kind, status: 'running', stage: rec.stage, percent: rec.percent }));
         } else if (rec.status === 'running' && current.status === 'pending') {
-          apply(v => ({ ...v, status: 'running', stage: rec.stage, percent: rec.percent }));
+          apply(v => ({ ...v, kind: rec.kind ?? v.kind, status: 'running', stage: rec.stage, percent: rec.percent }));
+        } else {
+          // No status/stage change worth applying, but still capture kind on
+          // the first tick so hub_upload jobs are known before completion.
+          if (rec.kind && rec.kind !== current.kind) apply(v => ({ ...v, kind: rec.kind }));
         }
       } catch {
         // ignore transient errors; next tick will retry

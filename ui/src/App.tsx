@@ -96,6 +96,11 @@ export default function App() {
                 setCurrentJobId(null);
                 setRouteState('idle');
               }}
+              onSentToHub={() => {
+                setCurrentJobId(null);
+                setRouteState('idle');
+                refreshLibrary().catch(() => {});
+              }}
             />
           )}
           {route === 'complete' && tid && currentDoc && (

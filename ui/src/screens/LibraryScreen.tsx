@@ -74,7 +74,10 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
                    }}>
                 <div className="lib-row-main">
                   <span className="ico"><Icon name="doc" size={14} /></span>
-                  <span className="name">{name}</span>
+                  <span className="name">
+                    {name}
+                    {i.origin === 'hub' && <span className="origin-badge" title="Synced from hub">hub</span>}
+                  </span>
                   <span className="dur">{fmtDur(i.duration_seconds)}</span>
                   <span className="spk">{i.speakers ?? 0} speakers</span>
                   <span className="lang">{i.language ?? '—'}</span>

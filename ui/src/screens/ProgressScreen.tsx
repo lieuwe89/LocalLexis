@@ -30,9 +30,10 @@ interface Props {
   audioPath: string;
   onComplete: (transcriptId: string) => void;
   onCancelled: () => void;
+  onSentToHub?: () => void;
 }
 
-export function ProgressScreen({ jobId, audioPath, onComplete, onCancelled }: Props) {
+export function ProgressScreen({ jobId, audioPath, onComplete, onCancelled, onSentToHub }: Props) {
   const job = useJobs(s => s.byId[jobId]);
   const startedAt = job?.startedAt ?? Date.now();
   const [elapsed, setElapsed] = useState(() => (Date.now() - startedAt) / 1000);
@@ -48,14 +49,40 @@ export function ProgressScreen({ jobId, audioPath, onComplete, onCancelled }: Pr
 
   useEffect(() => {
     if (job?.status === 'complete') {
+      if (job.kind === 'hub_upload') {
+        // Hub-upload jobs complete with an empty transcript_id — the transcript
+        // is produced on the hub, not locally. Never feed '' into the local
+        // transcript loader; return to idle instead.
+        (onSentToHub ?? onCancelled)();
+        return;
+      }
       const transcriptId = job.transcriptId ?? jobId;
       onComplete(transcriptId);
     } else if (job?.status === 'failed' && job.error === 'cancelled') {
       onCancelled();
     }
-  }, [job?.status, job?.transcriptId, job?.error, jobId, onComplete, onCancelled]);
+  }, [job?.status, job?.kind, job?.transcriptId, job?.error, jobId, onComplete, onCancelled, onSentToHub]);
 
   if (!job) return null;
+
+  if (job.kind === 'hub_upload') {
+    const done = job.status === 'complete';
+    return (
+      <div className="progress">
+        <div className="doc-head">
+          <div className="file-meta">{audioPath}</div>
+          <div className="progress-title-row">
+            <h1>{done ? 'Sent to hub' : 'Sending to hub…'}</h1>
+          </div>
+        </div>
+        <p className="hub-upload-note">
+          Queued for processing on the hub — the transcript will appear in your
+          library once it's done.
+        </p>
+        {job.status === 'failed' && job.error && job.error !== 'cancelled' && <div className="err">{job.error}</div>}
+      </div>
+    );
+  }
 
   const currentIdx = STAGES.indexOf(job.stage as typeof STAGES[number]);
   const overallPercent = currentIdx < 0

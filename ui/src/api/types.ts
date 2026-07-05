@@ -2,7 +2,7 @@ export type JobStatus = 'pending' | 'running' | 'complete' | 'failed';
 
 export interface JobRecord {
   id: string;
-  kind: 'transcribe' | 'record';
+  kind: string;
   status: JobStatus;
   stage: string;
   percent: number;
@@ -28,6 +28,7 @@ export interface TranscriptListItem {
   created_at?: string;
   models?: Record<string, string>;
   error?: string;
+  origin?: 'local' | 'hub';
   /**
    * Plain-text snippet parts from FTS5. Each part is either a normal
    * fragment (`match: false`) or a matched fragment to highlight with
