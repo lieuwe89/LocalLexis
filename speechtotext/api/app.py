@@ -232,6 +232,12 @@ def create_app(
         )
 
     def _on_entry_sent(entry) -> None:
+        # Runs on the HubRuntime background thread. The field writes below
+        # are each GIL-atomic and there is no cross-field invariant a torn
+        # read could break (a /jobs/{id} reader might briefly see the new
+        # status with the old stage, then self-correct) — same lock-free
+        # shape as the SSE publish path. Do NOT introduce a compound
+        # invariant across these fields without a lock.
         if entry.job_id is None:
             return
         try:

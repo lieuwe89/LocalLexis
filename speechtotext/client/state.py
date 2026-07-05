@@ -28,6 +28,11 @@ class ClientState:
 
 
 def save(st: ClientState) -> None:
+    # Atomic tmp-then-rename, but deliberately NO fsync (unlike the device
+    # key in identity.py). This state is fully recoverable: a lost cursor
+    # just re-pulls sync from an older point (idempotent), and the rest is
+    # re-derivable by re-pairing. The device key is unrecoverable, so it
+    # pays for the fsync; this does not.
     path = _state_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
