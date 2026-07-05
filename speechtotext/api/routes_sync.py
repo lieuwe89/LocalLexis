@@ -67,7 +67,10 @@ def _build_delta(
     # Reconcile before responding so the delta reflects disk. The reconciler
     # skips the walk entirely when no library dir's mtime changed, so idle
     # device polls don't stat every transcript file each time.
-    request.app.state.library_reconciler.reconcile(request.app.state.library_dirs)
+    # Snapshot the dir set — background daemons (_on_complete_dir) mutate it
+    # via .add() off-thread, and set() is an atomic C-level copy, so the
+    # reconciler iterates a private copy that can't grow mid-iteration.
+    request.app.state.library_reconciler.reconcile(set(request.app.state.library_dirs))
 
     rows = db.list_since(since, limit=limit, offset=offset)
 

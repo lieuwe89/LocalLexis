@@ -95,6 +95,81 @@ def test_get_transcript_returns_full_json(app_with_lib):
     assert r.json()["segments"][0]["text"] == "hi"
 
 
+# ── Library-dir snapshot race (concurrent .add() vs live iteration) ────────
+#
+# app.state.library_dirs is a plain set mutated off-thread by _on_complete_dir
+# (and hub-client sync) while request handlers iterate it. A concurrent .add()
+# growing the set mid-iteration raises "Set changed size during iteration".
+# The fix: handlers pass a snapshot — set(...) is an atomic C-level copy — so
+# reconcile / find_sidecar iterate a private copy. These tests pin that the
+# handlers hand off a distinct object, not the live set.
+
+
+def test_list_transcripts_passes_dir_snapshot(app_with_lib):
+    captured = {}
+    orig = app_with_lib.state.library_reconciler.reconcile
+
+    def spy(dirs):
+        captured["arg"] = dirs
+        captured["is_live"] = dirs is app_with_lib.state.library_dirs
+        return orig(dirs)
+
+    # Instance attribute shadows the bound method for the duration of the test.
+    app_with_lib.state.library_reconciler.reconcile = spy
+    client = TestClient(app_with_lib)
+    assert client.get("/transcripts").status_code == 200
+
+    assert isinstance(captured["arg"], set)
+    assert captured["is_live"] is False  # must be a snapshot, not the live set
+
+
+def test_get_transcript_passes_dir_snapshot(app_with_lib, monkeypatch):
+    import speechtotext.api.routes_transcripts as rt
+
+    captured = {}
+    orig = rt.find_sidecar
+
+    def spy(dirs, tid):
+        captured["is_live"] = dirs is app_with_lib.state.library_dirs
+        captured["is_set"] = isinstance(dirs, set)
+        return orig(dirs, tid)
+
+    monkeypatch.setattr(rt, "find_sidecar", spy)
+    client = TestClient(app_with_lib)
+    assert client.get("/transcripts/meet").status_code == 200
+    assert captured["is_set"] is True
+    assert captured["is_live"] is False
+
+
+def test_list_survives_concurrent_dir_adds(app_with_lib):
+    # Reproduces the race: hammer GET /transcripts while a daemon thread adds
+    # dirs to the live set. Without the snapshot this raises RuntimeError
+    # ("Set changed size during iteration") → 500. With it, always 200.
+    import threading
+
+    client = TestClient(app_with_lib)
+    stop = threading.Event()
+    sentinel = Path("/nonexistent/churn-sentinel")
+
+    def churn():
+        # Oscillate the set's size so an iterator can observe a size change
+        # mid-loop (the RuntimeError trigger) without letting the set grow
+        # unbounded — mirrors the real writer, which mostly re-adds a dir.
+        s = app_with_lib.state.library_dirs
+        while not stop.is_set():
+            s.add(sentinel)
+            s.discard(sentinel)
+
+    writer = threading.Thread(target=churn, daemon=True)
+    writer.start()
+    try:
+        for _ in range(200):
+            assert client.get("/transcripts").status_code == 200
+    finally:
+        stop.set()
+        writer.join(timeout=1.0)
+
+
 def test_patch_relabel_rewrites_sidecar(app_with_lib, tmp_path):
     client = TestClient(app_with_lib)
     r = client.patch("/transcripts/meet/relabel", json={"SPEAKER_00": "Bob"})

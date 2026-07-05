@@ -98,7 +98,9 @@ def list_transcripts(
     # Reconcile before responding so the user sees rows matching disk. The
     # reconciler skips the walk when no library dir's mtime changed, so
     # search-as-you-type doesn't stat every file on every keystroke.
-    request.app.state.library_reconciler.reconcile(request.app.state.library_dirs)
+    # Snapshot the dir set (atomic C-level copy) so a background .add() from
+    # _on_complete_dir can't grow it mid-iteration inside reconcile.
+    request.app.state.library_reconciler.reconcile(set(request.app.state.library_dirs))
     if q:
         return db.search(q, limit=limit)
     return db.list(limit=limit)
@@ -107,7 +109,7 @@ def list_transcripts(
 @router.get("/transcripts/{tid}")
 def get_transcript(tid: str, request: Request) -> dict:
     db = request.app.state.library_db
-    p = db.get_path(tid) or find_sidecar(request.app.state.library_dirs, tid)
+    p = db.get_path(tid) or find_sidecar(set(request.app.state.library_dirs), tid)
     if p is None or not p.exists():
         raise HTTPException(status_code=404, detail=f"transcript not found: {tid}")
     doc = json.loads(p.read_text(encoding="utf-8"))
@@ -198,7 +200,7 @@ def _forward_relabel_to_hub(
 @router.patch("/transcripts/{tid}/relabel")
 def patch_relabel(tid: str, mapping: dict[str, str], request: Request) -> dict:
     db = request.app.state.library_db
-    p = db.get_path(tid) or find_sidecar(request.app.state.library_dirs, tid)
+    p = db.get_path(tid) or find_sidecar(set(request.app.state.library_dirs), tid)
     if p is None or not p.exists():
         raise HTTPException(status_code=404, detail=f"transcript not found: {tid}")
 
@@ -242,7 +244,7 @@ def patch_transcript_op(
     key, and records the op in the transcript's ``_history``.
     """
     db = request.app.state.library_db
-    p = db.get_path(tid) or find_sidecar(request.app.state.library_dirs, tid)
+    p = db.get_path(tid) or find_sidecar(set(request.app.state.library_dirs), tid)
     if p is None or not p.exists():
         raise HTTPException(status_code=404, detail=f"transcript not found: {tid}")
 
