@@ -22,7 +22,16 @@ router = APIRouter()
 _config_write_lock = threading.Lock()
 
 _EXT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
-_TOP_KEYS = ("backend", "asr_model", "hf_token", "model_cache_dir", "default_out_dir")
+_TOP_KEYS = (
+    "backend",
+    "asr_model",
+    "asr_engine",
+    "remote_asr_url",
+    "remote_asr_model",
+    "hf_token",
+    "model_cache_dir",
+    "default_out_dir",
+)
 _WATCH_KEYS = ("recursive", "debounce_seconds", "extensions")
 
 
@@ -47,13 +56,21 @@ class ConfigPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     backend: Literal["auto", "cpu", "cuda", "mps"] | None = None
     asr_model: str | None = Field(default=None, min_length=1, max_length=128)
+    asr_engine: Literal["local", "remote"] | None = None
+    remote_asr_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    remote_asr_model: str | None = Field(default=None, min_length=1, max_length=128)
     hf_token: str | None = Field(default=None, max_length=512)
     model_cache_dir: str | None = Field(default=None, max_length=4096)
     default_out_dir: str | None = Field(default=None, max_length=4096)
     watch: WatchPatch | None = None
 
     @field_validator(
-        "asr_model", "hf_token", "model_cache_dir", "default_out_dir"
+        "asr_model",
+        "remote_asr_url",
+        "remote_asr_model",
+        "hf_token",
+        "model_cache_dir",
+        "default_out_dir",
     )
     @classmethod
     def _no_null_bytes(cls, v: str | None) -> str | None:
@@ -66,6 +83,9 @@ def _public(cfg) -> dict:
     return {
         "backend": cfg.backend,
         "asr_model": cfg.asr_model,
+        "asr_engine": cfg.asr_engine,
+        "remote_asr_url": cfg.remote_asr_url,
+        "remote_asr_model": cfg.remote_asr_model,
         "hf_token_set": bool(cfg.hf_token),
         "model_cache_dir": str(cfg.model_cache_dir),
         "default_out_dir": str(cfg.default_out_dir) if cfg.default_out_dir else None,

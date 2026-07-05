@@ -48,3 +48,32 @@ def test_invalid_backend_rejected(tmp_path: Path):
     cfg_file.write_text('backend = "tpu"\n')
     with pytest.raises(ValueError, match="backend"):
         load_config(config_path=cfg_file)
+
+
+def test_asr_engine_defaults_local(tmp_path: Path):
+    cfg = load_config(config_path=tmp_path / "missing.toml")
+    assert cfg.asr_engine == "local"
+    assert cfg.remote_asr_url == "http://127.0.0.1:52625/v1"
+    assert cfg.remote_asr_model == "whisper-v3"
+
+
+def test_asr_engine_remote_from_toml(tmp_path: Path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        '''
+asr_engine = "remote"
+remote_asr_url = "http://hub:13305/v1"
+remote_asr_model = "whisper-large-v3-turbo"
+'''
+    )
+    cfg = load_config(config_path=cfg_file)
+    assert cfg.asr_engine == "remote"
+    assert cfg.remote_asr_url == "http://hub:13305/v1"
+    assert cfg.remote_asr_model == "whisper-large-v3-turbo"
+
+
+def test_invalid_asr_engine_rejected(tmp_path: Path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('asr_engine = "npu"\n')
+    with pytest.raises(ValueError, match="asr_engine"):
+        load_config(config_path=cfg_file)

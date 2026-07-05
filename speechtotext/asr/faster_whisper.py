@@ -93,6 +93,7 @@ class FasterWhisperASR:
     ) -> None:
         from faster_whisper import WhisperModel  # lazy: deferred from module load to first instantiation
 
+        self.label = f"faster-whisper:{model_size}"
         device, compute_type = _DEVICE_MAP[backend]
         bundled = _resolve_bundled_model(model_size)
         self._model = WhisperModel(

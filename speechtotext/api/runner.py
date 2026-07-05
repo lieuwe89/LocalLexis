@@ -12,7 +12,7 @@ from speechtotext.api.events import (
     StageEvent,
 )
 from speechtotext.api.jobs import JobRegistry
-from speechtotext.asr.faster_whisper import FasterWhisperASR
+from speechtotext.asr import build_asr
 from speechtotext.backend import resolve_backend
 from speechtotext.config import Config, DEFAULT_CONFIG_PATH, load_config
 from speechtotext.diarize.pyannote import PyannoteDiarizer
@@ -42,9 +42,7 @@ _TRANSCRIBE_SEM = threading.BoundedSemaphore(_max_concurrent_transcribe())
 
 def _build_pipeline(cfg: Config, cli_backend: str | None) -> tuple[Pipeline, str]:
     backend = resolve_backend(cli_flag=cli_backend, config=cfg)
-    asr = FasterWhisperASR(
-        model_size=cfg.asr_model, backend=backend, download_root=cfg.model_cache_dir
-    )
+    asr = build_asr(cfg, backend)
     if not cfg.hf_token:
         raise RuntimeError("hf_token not set; configure via /config or config.toml")
     diarizer = PyannoteDiarizer(hf_token=cfg.hf_token, backend=backend)

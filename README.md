@@ -98,6 +98,24 @@ asr_model = "large-v3"
 hf_token = "hf_..."
 ```
 
+### Remote ASR (NPU via FastFlowLM / Lemonade)
+
+Instead of running faster-whisper in-process, transcription can be sent to
+any OpenAI-compatible `/v1/audio/transcriptions` endpoint — e.g. FastFlowLM
+(`flm serve --asr 1`) running whisper-large-v3-turbo on an AMD Ryzen AI NPU,
+or Lemonade Server:
+
+```toml
+asr_engine = "remote"                          # default: "local"
+remote_asr_url = "http://127.0.0.1:52625/v1"   # FLM default; Lemonade: :13305
+remote_asr_model = "whisper-v3"                # Lemonade: "whisper-large-v3-turbo"
+```
+
+Remote endpoints return plain text without timestamps, so audio is split on
+silences into ≤60 s chunks client-side; chunk boundaries become the segment
+timestamps used for speaker assignment. Diarization (pyannote) still runs
+locally — only Whisper is offloaded.
+
 ## CLI usage
 
 ```bash

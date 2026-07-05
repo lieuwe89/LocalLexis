@@ -96,7 +96,9 @@ class Pipeline:
                 speakers=speakers,
                 segments=labeled,
                 models={
-                    "asr": f"faster-whisper:{self._config.asr_model}",
+                    "asr": getattr(
+                        self._asr, "label", f"faster-whisper:{self._config.asr_model}"
+                    ),
                     "diarizer": "pyannote:4.0",
                     "backend": self._backend,
                 },

@@ -15,7 +15,7 @@ from rich.table import Table
 
 from speechtotext import relabel as relabel_module
 from speechtotext.devices import list_inputs
-from speechtotext.asr.faster_whisper import FasterWhisperASR
+from speechtotext.asr import build_asr
 from speechtotext.backend import resolve_backend
 from speechtotext.config import DEFAULT_CONFIG_PATH, load_config
 from speechtotext.diarize.pyannote import PyannoteDiarizer
@@ -38,9 +38,7 @@ def _progress(quiet: bool, json_logs: bool) -> Callable:
 def _build_pipeline(cli_backend: str | None, config_path: Path) -> tuple[Pipeline, str]:
     cfg = load_config(config_path=config_path)
     backend = resolve_backend(cli_flag=cli_backend, config=cfg)
-    asr = FasterWhisperASR(
-        model_size=cfg.asr_model, backend=backend, download_root=cfg.model_cache_dir
-    )
+    asr = build_asr(cfg, backend)
     if not cfg.hf_token:
         raise typer.BadParameter(
             "Hugging Face token required for pyannote diarization. "
