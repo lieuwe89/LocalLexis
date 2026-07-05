@@ -84,6 +84,17 @@ def test_join_failure_rolls_back_identity():
     assert state.load() is None
 
 
+def test_join_when_already_joined_raises(monkeypatch):
+    import os
+    wkey = os.urandom(32)
+    join.join_hub(_payload_str(), device_name="x",
+                  transport=_fake_hub_transport(wkey))
+    import pytest
+    with pytest.raises(RuntimeError):
+        join.join_hub(_payload_str(), device_name="y",
+                      transport=_fake_hub_transport(wkey))
+
+
 def test_leave_removes_identity_and_state():
     wkey = os.urandom(32)
     join.join_hub(

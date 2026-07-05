@@ -21,6 +21,7 @@ def _isolated_app_data(tmp_path_factory, monkeypatch):
     import speechtotext.api.secrets_store as _secrets_store
     import speechtotext.api.tls as _tls
     import speechtotext.api.workspace as _workspace
+    import speechtotext.client.paths as _client_paths
 
     data_dir = tmp_path_factory.mktemp("appdata")
     monkeypatch.setattr(
@@ -36,6 +37,10 @@ def _isolated_app_data(tmp_path_factory, monkeypatch):
         _secrets_store, "default_app_data_dir", lambda: data_dir
     )
     monkeypatch.setattr(_tls, "default_app_data_dir", lambda: data_dir)
+    # The client package resolves outbox_dir()/synced_dir() via its own
+    # module-local default_app_data_dir binding; point it at the same temp
+    # dir so joined-mode runtime tests never write to the real home.
+    monkeypatch.setattr(_client_paths, "default_app_data_dir", lambda: data_dir)
 
 
 def pytest_collection_modifyitems(config, items):

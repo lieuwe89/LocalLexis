@@ -20,6 +20,7 @@ from speechtotext.api.jobs import JobRegistry
 from speechtotext.api.library_db import LibraryDB
 from speechtotext.api.pairing import PairingTokenStore
 from speechtotext.api.reconcile import LibraryReconciler
+from speechtotext.api.routes_client import router as client_router
 from speechtotext.api.routes_config import router as config_router
 from speechtotext.api.routes_devices import router as devices_router
 from speechtotext.api.routes_hub import router as hub_router
@@ -135,7 +136,11 @@ async def _lifespan(app: FastAPI):
         logging.getLogger("speechtotext.api").info(
             "swept %d orphan partial upload(s) at startup", removed
         )
+    # No-op when not joined; if a prior session joined a hub, this resumes
+    # the outbox uploader + sync puller on boot.
+    app.state.hub_runtime.start()
     yield
+    app.state.hub_runtime.stop()
 
 
 def create_app(
@@ -154,10 +159,14 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    from speechtotext.client.hub_client import HubClient as _HubClient
+    from speechtotext.client.hub_runtime import HubRuntime
+    from speechtotext.client.paths import synced_dir
+
     app.state.jobs = JobRegistry()
     app.state.watcher = WatchController()
     app.state.library_dirs: set[Path] = set()
-    app.state.library_db = LibraryDB(library_db_path)
+    app.state.library_db = LibraryDB(library_db_path, hub_synced_dir=synced_dir())
     # Gates the library walk behind a per-dir mtime check so list/sync
     # requests don't stat every transcript file when nothing changed.
     app.state.library_reconciler = LibraryReconciler(app.state.library_db)
@@ -204,6 +213,39 @@ def create_app(
 
     app.state.jobs.set_on_complete_dir(_on_complete_dir)
 
+    if synced_dir().exists():
+        app.state.library_dirs.add(synced_dir())
+
+    def _client_factory(st, ident):
+        from speechtotext.api import routes_client
+        return _HubClient(
+            st.hub_url, st.device_id, ident.signing_key(),
+            transport=routes_client._TEST_TRANSPORT,
+        )
+
+    def _on_entry_sent(entry) -> None:
+        if entry.job_id is None:
+            return
+        try:
+            rec = app.state.jobs.get(entry.job_id)
+        except KeyError:
+            return
+        from speechtotext.api.jobs import JobStatus
+        rec.status = JobStatus.complete
+        rec.stage = "sent-to-hub"
+        rec.percent = 100.0
+
+    def _on_synced(paths) -> None:
+        app.state.library_dirs.add(synced_dir())
+        app.state.library_db.sync_dirs(list(app.state.library_dirs))
+
+    app.state.hub_runtime = HubRuntime(
+        hub_client_factory=_client_factory,
+        on_entry_sent=_on_entry_sent,
+        on_synced=_on_synced,
+    )
+
+    app.include_router(client_router)
     app.include_router(devices_router)
     app.include_router(hub_router)
     app.include_router(config_router)

@@ -24,6 +24,15 @@ def post_transcribe(req: TranscribeRequest, request: Request) -> dict:
     audio = Path(req.path)
     if not audio.exists() or audio.is_dir():
         raise HTTPException(status_code=404, detail=f"audio not found: {audio}")
+    runtime = getattr(request.app.state, "hub_runtime", None)
+    if runtime is not None and runtime.joined():
+        registry = request.app.state.jobs
+        job_id = registry.create(kind="hub_upload", audio_path=str(audio))
+        rec = registry.get(job_id)
+        rec.stage = "queued-for-hub"
+        runtime.enqueue_upload(audio, job_id=job_id)
+        runtime.poke()
+        return {"job_id": job_id}
     registry = request.app.state.jobs
     job_id = registry.create(kind="transcribe", audio_path=str(audio))
     runner.run_transcribe_job(

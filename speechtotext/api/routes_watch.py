@@ -26,6 +26,13 @@ def start(req: WatchStartRequest, request: Request) -> dict:
     ctrl = request.app.state.watcher
 
     def _on_file(path: Path):
+        runtime = getattr(request.app.state, "hub_runtime", None)
+        if runtime is not None and runtime.joined():
+            job_id = registry.create(kind="hub_upload", audio_path=str(path))
+            registry.get(job_id).stage = "queued-for-hub"
+            runtime.enqueue_upload(path, job_id=job_id)
+            runtime.poke()
+            return
         job_id = registry.create(kind="transcribe", audio_path=str(path))
         runner.run_transcribe_job(registry, job_id, path)
 

@@ -57,6 +57,10 @@ def join_hub(
     device_name: str,
     transport: httpx.BaseTransport | None = None,
 ) -> state_module.ClientState:
+    if state_module.load() is not None:
+        raise RuntimeError(
+            "already joined a hub; call leave_hub() before joining another"
+        )
     payload = decode_pairing_string(pairing_string)
     ident = identity_module.generate()
     try:

@@ -24,7 +24,16 @@ def _reset_modules(monkeypatch, forbidden: tuple[str, ...]) -> None:
         if any(mod == p or mod.startswith(p + ".") for p in forbidden):
             monkeypatch.delitem(sys.modules, mod, raising=False)
     for mod in list(sys.modules):
-        if mod.startswith("speechtotext."):
+        # Leave speechtotext.client.* cached: create_app() legitimately
+        # imports it, and re-importing would rebind its paths module to a
+        # fresh object that the autouse app-data isolation fixture (which
+        # patched the *original* module) no longer covers — leaking client
+        # writes to the real home dir for the rest of the session. The
+        # client package holds no ML imports, so keeping it cached does not
+        # weaken the ML-boot guard.
+        if mod.startswith("speechtotext.") and not mod.startswith(
+            "speechtotext.client"
+        ):
             monkeypatch.delitem(sys.modules, mod, raising=False)
 
 
