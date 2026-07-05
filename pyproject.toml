@@ -37,6 +37,7 @@ api = [
     "boto3>=1.34",
     "pynacl>=1.5",
     "cryptography>=42",
+    "qrcode>=7.4",
 ]
 packaging = [
     "pyinstaller>=6.0",
@@ -44,7 +45,7 @@ packaging = [
 
 [project.scripts]
 stt = "speechtotext.cli:app"
-locallexis-hub = "speechtotext.api.server:headless"
+locallexis-hub = "speechtotext.api.hub_cli:main"
 
 [tool.setuptools.packages.find]
 include = ["speechtotext*"]
