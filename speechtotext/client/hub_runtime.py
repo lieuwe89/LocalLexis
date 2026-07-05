@@ -100,12 +100,19 @@ class HubRuntime:
             # after this line either wakes the wait() below immediately
             # or is consumed by the next cycle's work — never lost.
             self._wake.clear()
-            client = None
             try:
                 st = state_module.load()
                 ident = identity_module.load()
-                if st is None or ident is None:
-                    break  # left the hub while running
+            except (FileNotFoundError, OSError):
+                # Racing with a concurrent leave_hub() deleting the key/state
+                # files mid-cycle — treat exactly like "left the hub while
+                # running": stop looping, no error to report (there's no
+                # hub relationship left to report an error about).
+                break
+            if st is None or ident is None:
+                break  # left the hub while running
+            client = None
+            try:
                 client = self._factory(st, ident)
                 sent = upload_queue.sweep(client)
                 if self._on_entry_sent:
@@ -116,13 +123,7 @@ class HubRuntime:
                     self._on_synced(written)
                 self._last_error = None
                 self._last_sync_at = time.time()
-            except (FileNotFoundError, OSError):
-                # Racing with a concurrent leave_hub() deleting the key/state
-                # files mid-cycle — treat exactly like "left the hub while
-                # running": stop looping, no error to report (there's no
-                # hub relationship left to report an error about).
-                break
-            except Exception as exc:  # network errors -> retry next cycle
+            except Exception as exc:  # network/disk errors -> retry next cycle, visible in status()
                 self._last_error = f"{type(exc).__name__}: {exc}"
             finally:
                 if client is not None:
