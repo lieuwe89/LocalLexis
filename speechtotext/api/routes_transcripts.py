@@ -118,12 +118,85 @@ def get_transcript(tid: str, request: Request) -> dict:
     return doc
 
 
+def _is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _forward_relabel_to_hub(
+    request: Request, tid: str, mapping: dict[str, str], p: Path
+) -> dict:
+    """Relabel a hub-origin transcript by forwarding one signed CRDT op
+    per speaker to the hub. The hub applies LWW and the updated doc comes
+    back on the next sync pull, so we deliberately do NOT write the local
+    synced file here (a local write would be clobbered by that pull)."""
+    from speechtotext.api import routes_client
+    from speechtotext.client import identity as _identity
+    from speechtotext.client import state as _state
+    from speechtotext.client.hub_client import HubClient
+
+    st = _state.load()
+    ident = _identity.load()
+    if st is None or ident is None:
+        raise HTTPException(status_code=409, detail="hub state missing")
+
+    # Seed lamport_observed from the highest clock we've synced for this
+    # transcript, then chain the hub-assigned lamport across the batch so
+    # successive ops in one relabel aren't demoted.
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        doc = {}
+    observed = 0
+    for c in (doc.get("_clocks") or {}).values():
+        if isinstance(c, dict):
+            observed = max(observed, int(c.get("lamport", 0)))
+
+    hub = HubClient(
+        st.hub_url, st.device_id, ident.signing_key(),
+        transport=routes_client.sync_test_transport(),
+    )
+    try:
+        for speaker_id, new_name in mapping.items():
+            result = hub.patch_json(f"/transcripts/{tid}", {
+                "op": "relabel",
+                "key": f"speakers.{speaker_id}",
+                "value": new_name,
+                "lamport_observed": observed,
+            })
+            la = result.get("lamport_assigned")
+            if isinstance(la, int):
+                observed = max(observed, la)
+    finally:
+        hub.close()
+
+    # Pull the hub's authoritative version back promptly so the UI reflects
+    # the relabel without waiting a full sync period.
+    if runtime := getattr(request.app.state, "hub_runtime", None):
+        runtime.poke()
+    return {"ok": True, "forwarded": True}
+
+
 @router.patch("/transcripts/{tid}/relabel")
 def patch_relabel(tid: str, mapping: dict[str, str], request: Request) -> dict:
     db = request.app.state.library_db
     p = db.get_path(tid) or find_sidecar(request.app.state.library_dirs, tid)
     if p is None or not p.exists():
         raise HTTPException(status_code=404, detail=f"transcript not found: {tid}")
+
+    # Hub-origin transcripts (under the synced dir) are relabeled by
+    # forwarding signed CRDT ops to the hub; the change round-trips back on
+    # the next sync pull. A local rewrite here would be clobbered by that
+    # pull. Do this OUTSIDE the per-tid lock: the forwarded CRDT PATCH takes
+    # its own lock, and in the loopback-self case holding ours would deadlock.
+    from speechtotext.client.paths import synced_dir
+    runtime = getattr(request.app.state, "hub_runtime", None)
+    if runtime is not None and runtime.joined() and _is_under(p, synced_dir()):
+        return _forward_relabel_to_hub(request, tid, mapping, p)
+
     # Take the same per-transcript lock as the CRDT PATCH op: relabel does a
     # read-modify-write on the sidecar JSON, so without it a concurrent
     # PATCH /transcripts/{tid} could be clobbered (and vice versa).
