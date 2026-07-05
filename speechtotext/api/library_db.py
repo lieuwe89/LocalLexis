@@ -247,6 +247,12 @@ class LibraryDB:
                     (SCHEMA_VERSION,),
                 )
             # Future migrations: bump SCHEMA_VERSION and branch on row[0].
+        # Additive, idempotent column add — intentionally NOT gated on
+        # SCHEMA_VERSION. New DBs already have `origin` from _DDL; old DBs
+        # get it here and existing rows take the column default ('local').
+        # A version bump + branch would be over-engineering for a single
+        # nullable-with-default column; the next non-additive migration
+        # should still use the SCHEMA_VERSION mechanism above.
         with self._lock, self._conn:
             try:
                 self._conn.execute(
