@@ -1,6 +1,10 @@
 import time
 
+import pytest
+
 from speechtotext.client import hub_runtime, identity, state
+
+pytestmark = pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
 
 
 def _join_locally():
