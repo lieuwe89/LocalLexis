@@ -85,10 +85,35 @@
 
 // User-input + status LED.
 #ifndef LOCALLEXIS_BOOT_BTN
-#define LOCALLEXIS_BOOT_BTN 0
+#define LOCALLEXIS_BOOT_BTN 0   // record button (tap = stop, hold = start)
+#endif
+#ifndef LOCALLEXIS_PWR_BTN
+#define LOCALLEXIS_PWR_BTN 18   // dedicated power button, active-LOW; hold to power off
 #endif
 #ifndef LOCALLEXIS_LED
 #define LOCALLEXIS_LED 3        // active-LOW
+#endif
+
+// Battery soft-power latch. VBAT_PWR is active-HIGH: drive 1 at boot to hold the
+// latch closed so the board stays on after the PWR button is released; drive 0 to
+// cut the battery rail (true power-off, ~0 uA). Without this the board is powered
+// only while the PWR button is physically held. See Waveshare 07_BATT_PWR_Test.
+#ifndef LOCALLEXIS_VBAT_PWR
+#define LOCALLEXIS_VBAT_PWR 17
+#endif
+
+// Battery voltage sense: ADC1 channel 3 = GPIO4, reading the cell through a 1:1
+// divider (so battery mV = ADC mV x 2). Fed by the VBAT_PWR rail, so it only reads
+// while the device is on. ADC1 is safe to use alongside Wi-Fi (ADC2 is not).
+#ifndef LOCALLEXIS_BAT_ADC
+#define LOCALLEXIS_BAT_ADC 4
+#endif
+
+// Diagnostic: when 1, loop() becomes a serial-driven screen previewer (type 0-7
+// to render each of the 8 UI frames; the recorder loop is disabled). Off in
+// production; enabled via the `screen-test` PlatformIO env. See platformio.ini.
+#ifndef LOCALLEXIS_SCREEN_TEST
+#define LOCALLEXIS_SCREEN_TEST 0
 #endif
 
 // Per-clip size caps. SD path matches hub DEFAULT_MAX_UPLOAD_BYTES; no-SD path is a

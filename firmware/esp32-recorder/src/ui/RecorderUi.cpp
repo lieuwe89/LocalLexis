@@ -39,7 +39,7 @@ void RecorderUi::setLed(bool on) {
 
 void RecorderUi::begin() {
     pinMode(led_, OUTPUT);
-    setLed(false);
+    setLed(true);  // solid on = device powered; only goes dark on real power-off
 
     pinMode(epd_.pwr, OUTPUT);
     digitalWrite(epd_.pwr, LOW);  // active-LOW: power the panel
@@ -98,7 +98,7 @@ void RecorderUi::onState(RecState state, StopReason reason) {
         return;
     }
     if (state == RecState::Standby) {
-        blinking_ = false; setLed(false);
+        blinking_ = false; setLed(true);  // recording blink ends -> back to solid-on
         if (reason == StopReason::Full) {
             current_.screen = Screen::Storage;     // cap-hit maps to Storage (DECISION)
             show(current_);

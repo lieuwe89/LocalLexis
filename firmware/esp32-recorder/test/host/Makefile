@@ -13,7 +13,7 @@
 CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -Wall -Wextra -Wpedantic -O2 -I../../src -I../../include
 
-TESTS = test_provisioning_protocol test_hub_url test_sign_v2 test_body_source test_wav_writer test_http_status test_recording_session test_dc_blocker test_screen_layout test_ui_icons
+TESTS = test_provisioning_protocol test_hub_url test_sign_v2 test_body_source test_wav_writer test_http_status test_recording_session test_dc_blocker test_screen_layout test_ui_icons test_battery_gauge
 
 .PHONY: all run clean
 all: run
@@ -49,6 +49,9 @@ test_screen_layout: test_screen_layout.cpp ../../src/ui/ScreenLayout.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 test_ui_icons: test_ui_icons.cpp ../../src/ui/UiBitmaps.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $^
+
+test_battery_gauge: test_battery_gauge.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 clean:

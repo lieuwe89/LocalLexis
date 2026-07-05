@@ -32,9 +32,13 @@ bool SdQueue::begin(int clkPin, int cmdPin, int d0Pin,
         Serial.println("SD_MMC.setPins failed; recordings will not be buffered to card.");
         return false;
     }
-    // 1-bit SDMMC mode matches the Waveshare ESP32-S3-ePaper-1.54 wiring.
-    if (!SD_MMC.begin("/sdcard", true)) {
-        Serial.println("SD mount failed; recordings will not be buffered to card.");
+    // 1-bit SDMMC mode matches the Waveshare ESP32-S3-ePaper-1.54 wiring. Third arg
+    // (format_if_mount_failed) auto-formats an unmountable card to FAT, so a brand-new
+    // or wrong-filesystem card just works. NOTE: this WIPES any card the driver can't
+    // mount (e.g. an exFAT card holding existing data) — it only ever runs on mount
+    // failure, never on a card that already mounts.
+    if (!SD_MMC.begin("/sdcard", true, true)) {
+        Serial.println("SD mount failed (even after format attempt); not buffering to card.");
         return false;
     }
     if (SD_MMC.cardType() == CARD_NONE) {
