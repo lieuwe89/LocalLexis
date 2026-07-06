@@ -1,0 +1,15 @@
+# deploy/systemd/hub-update.service
+[Unit]
+Description=LocalLexis hub auto-update (git-tag tracking)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=lieuwe
+Group=lieuwe
+WorkingDirectory=/home/lieuwe/LocalLexis
+Environment=HOME=/home/lieuwe
+Environment=PATH=/home/lieuwe/LocalLexis/.venv/bin:/usr/bin:/bin
+EnvironmentFile=-/home/lieuwe/.config/speechtotext/service.env
+ExecStart=/home/lieuwe/LocalLexis/scripts/hub-update.sh

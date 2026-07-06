@@ -1,0 +1,11 @@
+# deploy/systemd/hub-update.timer
+[Unit]
+Description=Run LocalLexis hub auto-update daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
