@@ -188,7 +188,9 @@ def headless() -> None:
     port = _int_env("LOCALLEXIS_PORT", 8765)
     loopback_port = _int_env("LOCALLEXIS_LOOPBACK_PORT")
     tls = _env_truthy("LOCALLEXIS_TLS_ENABLED")
-    app = create_app()
+    # Headless is the only LAN-reachable entry, so it serves the browser web UI
+    # at /app. The loopback sidecar (server.run) leaves serve_webui False.
+    app = create_app(serve_webui=True)
 
     if tls and loopback_port is not None:
         # Lazy import so non-TLS callers don't pay the cryptography
