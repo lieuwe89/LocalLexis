@@ -1,12 +1,15 @@
 import type { Platform, SidecarAuth, FileDropEvent } from './tauri';
+import { getToken, clearToken } from '../lib/webAuth';
 
 export type { Platform, SidecarAuth, FileDropEvent };
 
 export const platform: Platform = {
   async sidecarAuth(): Promise<SidecarAuth> {
-    throw new Error('web platform: sidecarAuth not implemented yet');
+    const token = getToken();
+    if (!token) throw new Error('not authenticated');
+    return { url: window.location.origin, token };
   },
-  resetSidecarAuth() {},
+  resetSidecarAuth() { clearToken(); },
   async appVersion() { return ''; },
   async openPath() {},
   async openFileDialog() { return null; },
