@@ -56,6 +56,8 @@ Side effects on success
 from __future__ import annotations
 
 import base64
+import hmac
+import os
 import threading
 import time
 
@@ -228,3 +230,24 @@ async def verify_device_signature(request: Request) -> str:
     body = await request.body()
     body_sha256 = hashlib.sha256(body).digest()
     return await verify_device_signature_with_digest(request, body_sha256)
+
+
+async def verify_admin_or_device(request: Request) -> str:
+    """Accept an admin bearer token OR a valid device signature.
+
+    Used by routes the hub web UI must reach (``PATCH /transcripts/{id}``)
+    that are otherwise device-signed. A present, matching ``LOCALLEXIS_API_TOKEN``
+    bearer authenticates as ``"admin"``; otherwise fall back to Ed25519
+    signature verification (returns the signer's device_id).
+
+    "Token unset" is NOT admin: when ``LOCALLEXIS_API_TOKEN`` is absent the
+    bearer branch cannot succeed, so a signature is still required.
+    """
+    expected = os.environ.get("LOCALLEXIS_API_TOKEN")
+    if expected:
+        auth = request.headers.get("authorization", "")
+        scheme, _, token = auth.partition(" ")
+        if scheme.lower() == "bearer" and hmac.compare_digest(token, expected):
+            return "admin"
+    # Fall back to signature. verify_device_signature raises 401 on failure.
+    return await verify_device_signature(request)
