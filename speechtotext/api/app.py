@@ -39,6 +39,10 @@ from speechtotext.api.warmup import warm_microphone_in_background
 from speechtotext.api.watcher import WatchController
 from speechtotext.config import load_config
 
+# Built web assets (login page + app JS) served at /app in headless mode.
+# See create_app(serve_webui=...) and server.headless() (Task 13).
+WEBUI_DIR = Path(__file__).resolve().parent.parent / "webui"
+
 
 # Routes that authenticate via the LAN-device flow rather than the
 # Tauri-launcher bearer token. BearerAuthMiddleware lets these through
@@ -101,6 +105,11 @@ class BearerAuthMiddleware:
         if _is_lan_signed_route(path, method):
             await self.app(scope, receive, send)
             return
+        # The web UI's own assets (login page + JS) must load before the user
+        # has a token; the API calls they make stay bearer-gated.
+        if method == "GET" and path.startswith("/app"):
+            await self.app(scope, receive, send)
+            return
         auth = ""
         for name, value in scope.get("headers") or []:
             if name == b"authorization":
@@ -146,6 +155,7 @@ async def _lifespan(app: FastAPI):
 def create_app(
     library_db_path: Path | None = None,
     devices_db_path: Path | None = None,
+    serve_webui: bool = False,
 ) -> FastAPI:
     app = FastAPI(title="LocalLexis", version=__version__, lifespan=_lifespan)
     # Order matters: middleware added LAST runs OUTERMOST, so CORS must be
@@ -279,5 +289,10 @@ def create_app(
     @app.get("/health")
     def health() -> dict:
         return {"ok": True}
+
+    if serve_webui and WEBUI_DIR.is_dir():
+        from fastapi.staticfiles import StaticFiles
+        # html=True serves index.html for /app/ and unmatched sub-paths (SPA).
+        app.mount("/app", StaticFiles(directory=str(WEBUI_DIR), html=True), name="webui")
 
     return app
