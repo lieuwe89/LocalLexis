@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Icon } from '../primitives/Icon';
 import { SPEAKER_COLORS } from '../primitives/colors';
 import type { TranscriptDoc } from '../api/types';
-import { openPath } from '@tauri-apps/plugin-opener';
+import { platform } from '@/platform';
 
 interface Props {
   doc: TranscriptDoc;
@@ -46,8 +46,8 @@ export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel }: Props) {
       // clipboard API can fail in restricted contexts; ignore
     }
   };
-  const onOpenTxt = () => txtPath && openPath(txtPath).catch((e) => console.error('open txt failed:', e));
-  const onOpenJson = () => jsonPath && openPath(jsonPath).catch((e) => console.error('open json failed:', e));
+  const onOpenTxt = () => txtPath && platform.openPath(txtPath).catch((e) => console.error('open txt failed:', e));
+  const onOpenJson = () => jsonPath && platform.openPath(jsonPath).catch((e) => console.error('open json failed:', e));
 
   const apply = async () => {
     const changed: Record<string, string> = {};

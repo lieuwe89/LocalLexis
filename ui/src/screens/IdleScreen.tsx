@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../primitives/Icon';
-import { open } from '@tauri-apps/plugin-dialog';
-import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { platform } from '@/platform';
 import type { TranscriptListItem } from '../api/types';
 
 export interface TranscribeOpts {
@@ -69,14 +68,14 @@ export function IdleScreen({ onTranscribe, recentFiles }: Props) {
   };
 
   useEffect(() => {
-    const unlistenPromise = getCurrentWebview().onDragDropEvent(event => {
-      if (event.payload.type === 'over' || event.payload.type === 'enter') {
+    const unlistenPromise = platform.onFileDrop(event => {
+      if (event.type === 'over' || event.type === 'enter') {
         setDrag(true);
-      } else if (event.payload.type === 'leave') {
+      } else if (event.type === 'leave') {
         setDrag(false);
-      } else if (event.payload.type === 'drop') {
+      } else if (event.type === 'drop') {
         setDrag(false);
-        const path = event.payload.paths?.[0];
+        const path = event.paths?.[0];
         if (path) onTranscribe(path, opts);
       }
     });
@@ -84,7 +83,7 @@ export function IdleScreen({ onTranscribe, recentFiles }: Props) {
   }, [onTranscribe, language, numSpeakers, backend]);
 
   const handleBrowse = async () => {
-    const selected = await open({
+    const selected = await platform.openFileDialog({
       multiple: false,
       directory: false,
       filters: [{ name: 'Audio', extensions: ACCEPTED_EXTS }],

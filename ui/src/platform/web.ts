@@ -1,6 +1,6 @@
-import type { Platform, SidecarAuth } from './tauri';
+import type { Platform, SidecarAuth, FileDropEvent } from './tauri';
 
-export type { Platform, SidecarAuth };
+export type { Platform, SidecarAuth, FileDropEvent };
 
 export const platform: Platform = {
   async sidecarAuth(): Promise<SidecarAuth> {

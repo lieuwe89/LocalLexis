@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { platform } from '@/platform';
 
 interface Status {
   running: boolean;
@@ -30,7 +30,7 @@ export function WatchScreen() {
   }, []);
 
   const pick = async () => {
-    const dir = await openDialog({ directory: true, multiple: false });
+    const dir = await platform.openFileDialog({ directory: true, multiple: false });
     if (typeof dir !== 'string') return;
     setPendingDir(dir);
     setError(null);

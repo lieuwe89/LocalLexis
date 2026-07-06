@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { audioDir, join } from '@tauri-apps/api/path';
+import { platform } from '@/platform';
 import './styles/global.css';
 import { Window } from './chrome/Window';
 import { Sidebar } from './chrome/Sidebar';
@@ -122,10 +122,10 @@ export default function App() {
               selectedDevice={recording.deviceId}
               onSelectDevice={(id) => useRecording.getState().setDevice(id)}
               onStart={async () => {
-                const dir = await audioDir();
+                const dir = await platform.audioDir();
                 const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
                 const filename = `recording-${ts}.flac`;
-                const fullPath = await join(dir, filename);
+                const fullPath = await platform.pathJoin(dir, filename);
                 useRecording.getState().reset();
                 const id = await startRecord(fullPath, recording.deviceId ?? undefined);
                 useRecording.getState().setJob(id);

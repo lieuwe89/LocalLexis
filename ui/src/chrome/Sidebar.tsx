@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getVersion } from '@tauri-apps/api/app';
+import { platform } from '@/platform';
 import { Icon, type IconName } from '../primitives/Icon';
 import { useLibrary } from '../stores/library';
 import { useRecording } from '../stores/recording';
@@ -28,7 +28,7 @@ export function Sidebar({ route, setRoute, setCurrentTranscriptId, jobActive }: 
   const [version, setVersion] = useState<string>('');
 
   useEffect(() => {
-    getVersion().then(v => setVersion('v' + v)).catch(() => setVersion(''));
+    platform.appVersion().then(v => setVersion('v' + v)).catch(() => setVersion(''));
   }, []);
 
   return (

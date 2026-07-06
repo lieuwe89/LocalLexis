@@ -3,7 +3,20 @@ import { CompleteScreen } from './CompleteScreen';
 import { vi } from 'vitest';
 import type { TranscriptDoc } from '../api/types';
 
-vi.mock('@tauri-apps/plugin-shell', () => ({ open: vi.fn() }));
+vi.mock('@/platform', () => ({
+  platform: {
+    sidecarAuth: vi.fn(async () => ({ url: 'http://127.0.0.1:8010', token: 't' })),
+    resetSidecarAuth: vi.fn(),
+    appVersion: vi.fn(async () => '1.0.0'),
+    openPath: vi.fn(async () => {}),
+    openFileDialog: vi.fn(async () => null),
+    audioDir: vi.fn(async () => '/audio'),
+    pathJoin: vi.fn(async (...p: string[]) => p.join('/')),
+    onFileDrop: vi.fn(async () => () => {}),
+    checkForUpdates: vi.fn(async () => {}),
+    relabelTranscript: vi.fn(async () => {}),
+  },
+}));
 
 const doc: TranscriptDoc = {
   version: 1,

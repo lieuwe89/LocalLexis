@@ -2,14 +2,19 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { IdleScreen } from './IdleScreen';
 import { vi } from 'vitest';
 
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-  open: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/api/webview', () => ({
-  getCurrentWebview: () => ({
-    onDragDropEvent: () => Promise.resolve(() => {}),
-  }),
+vi.mock('@/platform', () => ({
+  platform: {
+    sidecarAuth: vi.fn(async () => ({ url: 'http://127.0.0.1:8010', token: 't' })),
+    resetSidecarAuth: vi.fn(),
+    appVersion: vi.fn(async () => '1.0.0'),
+    openPath: vi.fn(async () => {}),
+    openFileDialog: vi.fn(async () => null),
+    audioDir: vi.fn(async () => '/audio'),
+    pathJoin: vi.fn(async (...p: string[]) => p.join('/')),
+    onFileDrop: vi.fn(async () => () => {}),
+    checkForUpdates: vi.fn(async () => {}),
+    relabelTranscript: vi.fn(async () => {}),
+  },
 }));
 
 test('renders hero and drop zone', () => {

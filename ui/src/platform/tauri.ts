@@ -11,6 +11,14 @@ export interface SidecarAuth {
   token: string;
 }
 
+// A drag-and-drop event surfaced to screens. `enter`/`over`/`leave` drive
+// drop-zone highlighting; `drop` carries the dropped file paths. Native maps
+// Tauri's onDragDropEvent payload; the web build never mounts capture screens
+// so its impl is an inert no-op.
+export type FileDropEvent =
+  | { type: 'enter' | 'over' | 'leave' }
+  | { type: 'drop'; paths: string[] };
+
 // The host-capability surface every shared screen depends on. The web impl
 // (web.ts) provides browser equivalents or no-ops; screens import '@/platform'
 // and never '@tauri-apps/*' directly, so the --mode hub bundle is tauri-free.
@@ -20,10 +28,10 @@ export interface Platform {
   resetSidecarAuth(): void;
   appVersion(): Promise<string>;
   openPath(path: string): Promise<void>;
-  openFileDialog(opts?: { directory?: boolean; multiple?: boolean }): Promise<string | string[] | null>;
+  openFileDialog(opts?: { directory?: boolean; multiple?: boolean; filters?: { name: string; extensions: string[] }[] }): Promise<string | string[] | null>;
   audioDir(): Promise<string>;
   pathJoin(...parts: string[]): Promise<string>;
-  onFileDrop(cb: (paths: string[]) => void): Promise<() => void>;
+  onFileDrop(cb: (event: FileDropEvent) => void): Promise<() => void>;
   checkForUpdates(silent?: boolean): Promise<void>;
   // Relabel a transcript's speakers. Native: existing /relabel route (which
   // forwards CRDT ops for hub-origin docs). Web: CRDT ops direct to the hub.
@@ -76,7 +84,9 @@ export const platform: Platform = {
   pathJoin: (...parts) => tauriJoin(...parts),
   async onFileDrop(cb) {
     const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
-      if (event.payload.type === 'drop') cb(event.payload.paths);
+      const t = event.payload.type;
+      if (t === 'drop') cb({ type: 'drop', paths: event.payload.paths });
+      else if (t === 'enter' || t === 'over' || t === 'leave') cb({ type: t });
     });
     return unlisten;
   },
