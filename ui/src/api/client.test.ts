@@ -1,8 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted so the vi.mock factory below can reference it.
-const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+const { sidecarAuthMock, resetSidecarAuthMock } = vi.hoisted(() => ({
+  sidecarAuthMock: vi.fn(),
+  resetSidecarAuthMock: vi.fn(),
+}));
+vi.mock('@/platform', () => ({
+  platform: {
+    sidecarAuth: sidecarAuthMock,
+    resetSidecarAuth: resetSidecarAuthMock,
+  },
+}));
 
 function stubOk(body: unknown) {
   return { ok: true, status: 200, json: async () => body, text: async () => '' };
@@ -12,8 +20,9 @@ describe('api retry policy', () => {
   beforeEach(() => {
     // Reset client.ts's module-level sidecar cache between tests.
     vi.resetModules();
-    invokeMock.mockReset();
-    invokeMock.mockResolvedValue({ url: 'http://hub.test', token: 'tok' });
+    sidecarAuthMock.mockReset();
+    resetSidecarAuthMock.mockReset();
+    sidecarAuthMock.mockResolvedValue({ url: 'http://hub.test', token: 'tok' });
   });
 
   afterEach(() => {
