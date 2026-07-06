@@ -1,0 +1,8 @@
+# requirements-server-cpu.txt
+# Constraint file for the headless CPU homelab (no CUDA). Use with:
+#   pip install -e ".[api]" -c requirements-server-cpu.txt \
+#       --extra-index-url https://download.pytorch.org/whl/cpu
+# Encodes the "CUDA wheels on a CPU box" gotcha as versioned config.
+torch==2.11.0+cpu
+torchaudio==2.11.0+cpu
+torchcodec==0.14.0
