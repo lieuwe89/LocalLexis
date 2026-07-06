@@ -47,5 +47,53 @@ if [ "$DRY_RUN" -eq 1 ]; then
   log "DRY: would update $current -> $latest"; exit 0
 fi
 
-# --- update body added in Task 5 ---
-log "TODO update body"
+prev="$current"
+log "updating $prev -> $latest"
+
+rollback() {
+  local reason="$1"
+  log "FAILED ($reason); rolling back to $prev"
+  git checkout --quiet "$prev" || true
+  fetch_webui "$prev" || log "warn: could not restore webui for $prev"
+  # bare `pip` resolves on PATH: the venv bin (systemd unit) in prod, the stub in tests.
+  pip install -e ".[api]" -c requirements-server-cpu.txt \
+     --extra-index-url "$PIP_INDEX" --quiet || true
+  sudo -- systemctl restart "$SERVE_UNIT" "$WATCH_UNIT" || true
+  mkdir -p "$(dirname "$MARKER")"
+  echo "$(date -Is) failed=$latest reason=$reason rolled_back_to=$prev" > "$MARKER"
+  logger -t hub-update "rollback to $prev after $reason" 2>/dev/null || true
+  exit 1
+}
+
+fetch_webui() {
+  local tag="$1" tmp
+  tmp="$(mktemp -d)"
+  gh release download "$tag" --repo "$REPO_SLUG" -p "$ASSET_GLOB" -D "$tmp" || return 1
+  local arc
+  arc="$(ls "$tmp"/$ASSET_GLOB 2>/dev/null | head -1)"
+  [ -n "$arc" ] || return 1
+  rm -rf "$REPO_DIR/speechtotext/webui"
+  tar -xzf "$arc" -C "$REPO_DIR/speechtotext"
+  [ -f "$REPO_DIR/speechtotext/webui/index.html" ] || return 1
+}
+
+health_ok() {
+  local deadline=$(( SECONDS + HEALTH_TIMEOUT ))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    code="$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $TOKEN" "$HEALTH_URL" || echo 000)"
+    [ "$code" = "200" ] && return 0
+    sleep 2
+  done
+  return 1
+}
+
+git checkout --quiet "$latest" || rollback "checkout"
+fetch_webui "$latest" || rollback "webui-asset"
+pip install -e ".[api]" -c requirements-server-cpu.txt \
+   --extra-index-url "$PIP_INDEX" --quiet || rollback "pip"
+sudo -- systemctl restart "$SERVE_UNIT" "$WATCH_UNIT" || rollback "restart"
+health_ok || rollback "health"
+
+rm -f "$MARKER"
+log "updated to $latest OK"

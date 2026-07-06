@@ -25,3 +25,19 @@ def test_dry_run_mutates_nothing(fake_server):
     cur = subprocess.run(["git", "describe", "--tags", "--exact-match"],
                          cwd=fake_server["repo"], capture_output=True, text=True)
     assert cur.stdout.strip() == "v1.0.0"
+
+
+def test_happy_update_checks_out_installs_restarts(fake_server):
+    res = fake_server["run"]()
+    assert res.returncode == 0, res.stderr
+    import subprocess
+    cur = subprocess.run(["git", "describe", "--tags", "--exact-match"],
+                         cwd=fake_server["repo"], capture_output=True, text=True)
+    assert cur.stdout.strip() == "v1.1.0"
+    # webui extracted from the fake asset
+    assert (fake_server["repo"] / "speechtotext" / "webui" / "index.html").is_file()
+    calls = _read(fake_server["calls"])
+    assert "gh release download v1.1.0" in calls
+    assert "pip install" in calls
+    assert "systemctl restart" in calls
+    assert not fake_server["marker"].exists()  # no failure marker on success
