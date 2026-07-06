@@ -66,4 +66,32 @@ describe('api retry policy', () => {
     ).rejects.toThrow();
     expect(counts['http://hub.test/jobs/transcribe']).toBe(1);
   });
+
+  it('fires the unauthorized handler on a 401 then throws', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 401, json: async () => ({}), text: async () => 'unauthorized' })),
+    );
+
+    const { api, setUnauthorizedHandler } = await import('./client');
+    const onUnauthorized = vi.fn();
+    setUnauthorizedHandler(onUnauthorized);
+    await expect(api('/transcripts')).rejects.toThrow(/401/);
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    setUnauthorizedHandler(null);
+  });
+
+  it('does not fire the unauthorized handler on a 500', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}), text: async () => 'boom' })),
+    );
+
+    const { api, setUnauthorizedHandler } = await import('./client');
+    const onUnauthorized = vi.fn();
+    setUnauthorizedHandler(onUnauthorized);
+    await expect(api('/transcripts')).rejects.toThrow(/500/);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    setUnauthorizedHandler(null);
+  });
 });

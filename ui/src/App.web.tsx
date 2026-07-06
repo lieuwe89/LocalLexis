@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './styles/global.css';
 import { Window } from './chrome/Window';
 import { LibraryScreen } from './screens/LibraryScreen';
@@ -6,6 +6,7 @@ import { CompleteScreen } from './screens/CompleteScreen';
 import { WebSettingsScreen } from './screens/web/WebSettingsScreen';
 import { LoginScreen } from './screens/web/LoginScreen';
 import { getToken } from './lib/webAuth';
+import { resetSidecarInfo, setUnauthorizedHandler } from './api/client';
 import { useLibrary } from './stores/library';
 import { useTranscripts } from './stores/transcripts';
 import type { Route } from './types/route';
@@ -25,6 +26,17 @@ export default function App() {
   const refreshLibrary = useLibrary(s => s.refresh);
   const currentDoc = useTranscripts(s => (tid ? s.byId[tid] : undefined));
   const relabel = useTranscripts(s => s.relabel);
+
+  // A rejected admin token (e.g. the hub rotated LOCALLEXIS_API_TOKEN or
+  // restarted) makes every api() call 401. Clear the stored token and drop
+  // back to the login screen rather than stranding the user on an empty UI.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      resetSidecarInfo();
+      setAuthed(false);
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   if (!authed) {
     return (

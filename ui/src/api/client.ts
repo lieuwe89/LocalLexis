@@ -26,6 +26,15 @@ function isIdempotent(method: string | undefined): boolean {
   return IDEMPOTENT_METHODS.has((method ?? 'GET').toUpperCase());
 }
 
+// Opt-in hook fired when the server returns 401. The web shell registers this
+// to clear the stored admin token and return to the login screen (spec: "any
+// 401 returns to login"). Native never registers it — its loopback bearer
+// doesn't expire — so native behavior is unchanged.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  onUnauthorized = fn;
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const info = await sidecarInfo();
   const headers = new Headers(init?.headers);
@@ -34,7 +43,10 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const r = await fetch(info.url + path, { ...init, headers });
-      if (!r.ok) throw new Error(`${r.status} ${path}: ${await r.text()}`);
+      if (!r.ok) {
+        if (r.status === 401) onUnauthorized?.();
+        throw new Error(`${r.status} ${path}: ${await r.text()}`);
+      }
       return r.json() as Promise<T>;
     } catch (e) {
       lastErr = e;
