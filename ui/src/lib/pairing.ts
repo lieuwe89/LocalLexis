@@ -55,3 +55,13 @@ export function buildPairingPayload(
   }
   return payload;
 }
+
+// The web pairing page knows the hub's reachable address from the browser
+// (window.location.origin), so it skips the LAN-address guesswork that
+// buildPairingPayload does for the desktop app.
+export function buildWebPairingPayload(
+  origin: string,
+  token: MintedToken,
+): PairingPayloadV1 {
+  return { hub_url: origin, workspace_id: token.workspace_id, token: token.token };
+}

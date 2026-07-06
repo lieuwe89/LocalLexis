@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPairingPayload } from './pairing';
+import { buildPairingPayload, buildWebPairingPayload } from './pairing';
 
 const token = { token: 'tok_abc', workspace_id: 'ws_42' };
 
@@ -57,5 +57,12 @@ describe('buildPairingPayload', () => {
         8765,
       ),
     ).toThrow(/LAN address/);
+  });
+
+  it('builds a web pairing payload from origin + token', () => {
+    const p = buildWebPairingPayload('http://hub.tail-scale.ts.net:8010', {
+      token: 'tok', workspace_id: 'ws1',
+    });
+    expect(p).toEqual({ hub_url: 'http://hub.tail-scale.ts.net:8010', workspace_id: 'ws1', token: 'tok' });
   });
 });

@@ -16,11 +16,8 @@ export const useTranscripts = create<State>((set) => ({
     return doc;
   },
   relabel: async (id, mapping) => {
-    await api(`/transcripts/${id}/relabel`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(mapping),
-    });
+    const { platform } = await import('@/platform');
+    await platform.relabelTranscript(id, mapping);
     await useTranscripts.getState().load(id);
   },
 }));

@@ -14,7 +14,9 @@ export const platform: Platform = {
   async pathJoin(...parts) { return parts.join('/'); },
   async onFileDrop() { return () => {}; },
   async checkForUpdates() {},
-  async relabelTranscript() {
-    throw new Error('web platform: relabelTranscript not implemented yet');
+  async relabelTranscript(id, mapping) {
+    const { api } = await import('../api/client');
+    const { webRelabel } = await import('../lib/webRelabel');
+    await webRelabel(api, id, mapping);
   },
 };
