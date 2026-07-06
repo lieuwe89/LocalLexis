@@ -56,22 +56,27 @@ export default function App() {
         <button aria-current={route === 'settings'} onClick={() => setRoute('settings')}>Settings</button>
       </nav>
       <div className="main">
-        {route === 'library' && (
-          <LibraryScreen
-            setRoute={(r) => setRoute(r as WebRoute)}
-            setTid={setTid}
-          />
-        )}
-        {route === 'complete' && currentDoc && tid && (
-          <CompleteScreen
-            key={tid}
-            doc={currentDoc}
-            txtPath={currentDoc.paths?.txt}
-            jsonPath={currentDoc.paths?.json}
-            onRelabel={async (m) => { await relabel(tid, m); }}
-          />
-        )}
-        {route === 'settings' && <WebSettingsScreen />}
+        {/* .main-body owns the scroll (overflow: auto). The native App.tsx
+            wraps its screens the same way; without it, content taller than the
+            fixed-height window chrome is clipped with no way to scroll. */}
+        <div className="main-body">
+          {route === 'library' && (
+            <LibraryScreen
+              setRoute={(r) => setRoute(r as WebRoute)}
+              setTid={setTid}
+            />
+          )}
+          {route === 'complete' && currentDoc && tid && (
+            <CompleteScreen
+              key={tid}
+              doc={currentDoc}
+              txtPath={currentDoc.paths?.txt}
+              jsonPath={currentDoc.paths?.json}
+              onRelabel={async (m) => { await relabel(tid, m); }}
+            />
+          )}
+          {route === 'settings' && <WebSettingsScreen />}
+        </div>
       </div>
     </Window>
   );

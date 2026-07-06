@@ -8,6 +8,10 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(({ mode }) => {
   const isHub = mode === 'hub';
   return {
+    // The hub bundle is served under /app (StaticFiles mount + the middleware
+    // bypass). Without this, assets emit as root-absolute /assets/... which the
+    // bearer gate 401s pre-login → blank page. Tauri serves from / as usual.
+    base: isHub ? '/app/' : '/',
     plugins: [react()],
     resolve: {
       alias: {
