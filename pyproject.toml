@@ -51,6 +51,11 @@ locallexis-hub = "speechtotext.api.hub_cli:main"
 include = ["speechtotext*"]
 exclude = ["tests*"]
 
+[tool.setuptools.package-data]
+# The hub web UI is built by `npm run build:hub` into speechtotext/webui/ and
+# shipped inside the wheel so `pip install` carries it — no Node on the server.
+speechtotext = ["webui/**/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"

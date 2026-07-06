@@ -6,6 +6,8 @@ htmlcov/
 *.egg-info/
 build/
 dist/
+# Built hub web UI assets (npm run build:hub output; shipped via package-data at wheel build)
+/speechtotext/webui/
 .venv/
 venv/
 .env
