@@ -11,7 +11,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from speechtotext.api.auth import verify_device_signature
+from speechtotext.api.auth import verify_admin_or_device
 from speechtotext.api.crdt import (
     OpRequest,
     TranscriptState,
@@ -233,7 +233,7 @@ def patch_transcript_op(
     tid: str,
     body: PatchOpBody,
     request: Request,
-    device_id: str = Depends(verify_device_signature),
+    device_id: str = Depends(verify_admin_or_device),
 ) -> PatchResult:
     """Apply a CRDT op to a transcript.
 

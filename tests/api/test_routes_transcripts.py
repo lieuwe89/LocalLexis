@@ -435,6 +435,22 @@ class TestPatchTranscriptOp:
         )
 
 
+def test_patch_transcript_op_accepts_admin_bearer(app_with_lib, monkeypatch):
+    monkeypatch.setenv("LOCALLEXIS_API_TOKEN", "secret")
+    client = TestClient(app_with_lib)
+    body = json.dumps(
+        {"op": "relabel", "key": "speakers.SPEAKER_00", "value": "Alice",
+         "lamport_observed": 0}
+    ).encode("utf-8")
+    r = client.patch(
+        "/transcripts/meet",
+        content=body,
+        headers={"Content-Type": "application/json", "Authorization": "Bearer secret"},
+    )
+    assert r.status_code == 200, r.text
+    assert "lamport_assigned" in r.json()
+
+
 # ── PATCH auth (block 5c) ──────────────────────────────────────────────────
 
 
