@@ -1,0 +1,23 @@
+# deploy/systemd/locallexis-hub.service
+# Install as /etc/systemd/system/locallexis-serve.service (keep the name so the
+# existing enable/WantedBy wiring is unchanged), daemon-reload, restart.
+[Unit]
+Description=LocalLexis headless hub (locallexis-hub serve)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lieuwe
+Group=lieuwe
+WorkingDirectory=/home/lieuwe/LocalLexis
+Environment=HOME=/home/lieuwe
+Environment=LOCALLEXIS_HOST=0.0.0.0
+Environment=LOCALLEXIS_PORT=8010
+EnvironmentFile=-/home/lieuwe/.config/speechtotext/service.env
+ExecStart=/home/lieuwe/LocalLexis/.venv/bin/locallexis-hub serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
