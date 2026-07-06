@@ -42,8 +42,8 @@ def fixture_devices() -> list[dict]:
 
 def test_lists_only_input_devices_by_default(fixture_devices):
     with (
-        patch("speechtotext.devices.sd.query_devices", side_effect=_fake_query(fixture_devices)),
-        patch("speechtotext.devices.sd.default") as default,
+        patch("sounddevice.query_devices", side_effect=_fake_query(fixture_devices)),
+        patch("sounddevice.default") as default,
     ):
         default.device = (0, 1)
         result = list_inputs()
@@ -52,8 +52,8 @@ def test_lists_only_input_devices_by_default(fixture_devices):
 
 def test_include_all_returns_everything(fixture_devices):
     with (
-        patch("speechtotext.devices.sd.query_devices", side_effect=_fake_query(fixture_devices)),
-        patch("speechtotext.devices.sd.default") as default,
+        patch("sounddevice.query_devices", side_effect=_fake_query(fixture_devices)),
+        patch("sounddevice.default") as default,
     ):
         default.device = (0, 1)
         result = list_inputs(include_all=True)
@@ -62,8 +62,8 @@ def test_include_all_returns_everything(fixture_devices):
 
 def test_default_flag_set_on_default_device(fixture_devices):
     with (
-        patch("speechtotext.devices.sd.query_devices", side_effect=_fake_query(fixture_devices)),
-        patch("speechtotext.devices.sd.default") as default,
+        patch("sounddevice.query_devices", side_effect=_fake_query(fixture_devices)),
+        patch("sounddevice.default") as default,
     ):
         default.device = (2, 1)  # index 2 = BlackHole as default input
         result = list_inputs()
@@ -74,8 +74,8 @@ def test_default_flag_set_on_default_device(fixture_devices):
 
 def test_default_when_sd_default_is_scalar(fixture_devices):
     with (
-        patch("speechtotext.devices.sd.query_devices", side_effect=_fake_query(fixture_devices)),
-        patch("speechtotext.devices.sd.default") as default,
+        patch("sounddevice.query_devices", side_effect=_fake_query(fixture_devices)),
+        patch("sounddevice.default") as default,
     ):
         default.device = 0  # some hostapis return a scalar, not a tuple
         result = list_inputs()
@@ -110,8 +110,8 @@ def test_audio_device_is_frozen():
 def test_cli_table_output(fixture_devices):
     runner = CliRunner()
     with (
-        patch("speechtotext.devices.sd.query_devices", side_effect=_fake_query(fixture_devices)),
-        patch("speechtotext.devices.sd.default") as default,
+        patch("sounddevice.query_devices", side_effect=_fake_query(fixture_devices)),
+        patch("sounddevice.default") as default,
     ):
         default.device = (0, 1)
         result = runner.invoke(app, ["devices"])
@@ -123,8 +123,8 @@ def test_cli_table_output(fixture_devices):
 def test_cli_json_output(fixture_devices):
     runner = CliRunner()
     with (
-        patch("speechtotext.devices.sd.query_devices", side_effect=_fake_query(fixture_devices)),
-        patch("speechtotext.devices.sd.default") as default,
+        patch("sounddevice.query_devices", side_effect=_fake_query(fixture_devices)),
+        patch("sounddevice.default") as default,
     ):
         default.device = (0, 1)
         result = runner.invoke(app, ["devices", "--json"])
@@ -139,10 +139,38 @@ def test_cli_json_output(fixture_devices):
 def test_cli_exit_1_when_no_inputs():
     runner = CliRunner()
     with (
-        patch("speechtotext.devices.sd.query_devices", side_effect=_fake_query([])),
-        patch("speechtotext.devices.sd.default") as default,
+        patch("sounddevice.query_devices", side_effect=_fake_query([])),
+        patch("sounddevice.default") as default,
     ):
         default.device = (0, 1)
         result = runner.invoke(app, ["devices"])
     assert result.exit_code == 1
     assert "stt doctor" in (result.stderr or "") + result.stdout
+
+
+def test_devices_module_imports_without_sounddevice(monkeypatch):
+    """Headless hosts have no audio server; importing the module (as `stt serve`
+    does transitively) must not import sounddevice. Only list_inputs()/_default
+    touch it, lazily."""
+    import builtins
+    import importlib
+    import sys
+
+    real_import = builtins.__import__
+
+    def _blocked_import(name, *args, **kwargs):
+        if name == "sounddevice" or name.startswith("sounddevice."):
+            raise ImportError("PortAudio unavailable (headless)")
+        return real_import(name, *args, **kwargs)
+
+    # Drop any cached copy so re-import re-executes module top-level.
+    sys.modules.pop("speechtotext.devices", None)
+    sys.modules.pop("sounddevice", None)
+    monkeypatch.setattr(builtins, "__import__", _blocked_import)
+
+    devices = importlib.import_module("speechtotext.devices")
+    # Non-audio helpers work with no sounddevice present:
+    assert devices.classify("MacBook Pro Microphone") == "mic"
+    # The audio path imports lazily, so the failure appears only on call:
+    with pytest.raises(ImportError):
+        devices.list_inputs()

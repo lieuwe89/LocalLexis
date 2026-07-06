@@ -4,7 +4,11 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-import sounddevice as sd
+# NOTE: `sounddevice` is imported lazily inside the functions that need it.
+# Importing it at module load runs PortAudio's _initialize(), which hard-fails
+# on headless hosts with no audio server (e.g. `stt serve`/`stt watch` on a
+# server) even though only the mic/record features use it. Mirrors the lazy
+# import already used in speechtotext/api/warmup.py.
 
 Hint = Literal["mic", "loopback", "mic+loopback", "unknown"]
 
@@ -52,6 +56,8 @@ def classify(name: str) -> Hint:
 
 
 def _default_input_index() -> int | None:
+    import sounddevice as sd
+
     dev = sd.default.device
     if isinstance(dev, (tuple, list)):
         return dev[0] if dev else None
@@ -59,6 +65,8 @@ def _default_input_index() -> int | None:
 
 
 def list_inputs(include_all: bool = False) -> list[AudioDevice]:
+    import sounddevice as sd
+
     raw = sd.query_devices()
     default_idx = _default_input_index()
     out: list[AudioDevice] = []
