@@ -41,3 +41,27 @@ def test_happy_update_checks_out_installs_restarts(fake_server):
     assert "pip install" in calls
     assert "systemctl restart" in calls
     assert not fake_server["marker"].exists()  # no failure marker on success
+
+
+def test_rollback_on_missing_asset(fake_server):
+    fake_server["env"]["FAKE_ASSET_MISSING"] = "1"
+    res = fake_server["run"]()
+    assert res.returncode == 1
+    import subprocess
+    cur = subprocess.run(["git", "describe", "--tags", "--exact-match"],
+                         cwd=fake_server["repo"], capture_output=True, text=True)
+    assert cur.stdout.strip() == "v1.0.0"  # rolled back
+    assert fake_server["marker"].exists()
+    assert "reason=webui-asset" in fake_server["marker"].read_text()
+
+
+def test_rollback_on_health_failure(fake_server):
+    fake_server["env"]["FAKE_HEALTH_CODE"] = "503"
+    res = fake_server["run"]()
+    assert res.returncode == 1
+    import subprocess
+    cur = subprocess.run(["git", "describe", "--tags", "--exact-match"],
+                         cwd=fake_server["repo"], capture_output=True, text=True)
+    assert cur.stdout.strip() == "v1.0.0"
+    assert fake_server["marker"].exists()
+    assert "reason=health" in fake_server["marker"].read_text()
