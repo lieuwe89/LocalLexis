@@ -32,6 +32,7 @@ from speechtotext.api.routes_ingest import (
 from speechtotext.api.routes_jobs import router as jobs_router
 from speechtotext.api.routes_models import router as models_router
 from speechtotext.api.routes_pairing import router as pairing_router
+from speechtotext.api.routes_summarize import router as summarize_router
 from speechtotext.api.routes_sync import router as sync_router
 from speechtotext.api.routes_trash import router as trash_router
 from speechtotext.api.routes_transcripts import router as transcripts_router
@@ -283,6 +284,7 @@ def create_app(
     app.include_router(jobs_router)
     app.include_router(models_router)
     app.include_router(pairing_router)
+    app.include_router(summarize_router)
     app.include_router(sync_router)
     app.include_router(trash_router)
     app.include_router(transcripts_router)
