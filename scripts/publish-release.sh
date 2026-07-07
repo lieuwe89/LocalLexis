@@ -43,7 +43,17 @@ package() {
   local bundle="$REPO_DIR/speechtotext/webui"
   [ -f "$bundle/index.html" ] || { echo "no built bundle at $bundle" >&2; exit 1; }
   local archive="$OUT_DIR/webui-$TAG.tar.gz"
-  tar -czf "$archive" -C "$REPO_DIR/speechtotext" webui
+  # Strip xattrs so the Linux server's `tar -xzf` doesn't spew
+  # "Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'".
+  # --no-xattrs is honoured by both macOS bsdtar (which stores com.apple.provenance
+  # by default) and GNU tar. Note: bsdtar's --no-mac-metadata drops the ._* AppleDouble
+  # files but NOT the xattr pax records, so it is not enough here. COPYFILE_DISABLE=1
+  # also suppresses AppleDouble entries. Probe kept as a fallback for exotic tars.
+  local xattr_flag=""
+  if tar --no-xattrs --version >/dev/null 2>&1; then
+    xattr_flag="--no-xattrs"
+  fi
+  COPYFILE_DISABLE=1 tar $xattr_flag -czf "$archive" -C "$REPO_DIR/speechtotext" webui
   echo "$archive"
 }
 

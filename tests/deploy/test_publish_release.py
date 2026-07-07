@@ -34,6 +34,44 @@ def test_package_produces_correct_layout(tmp_path):
     assert any(n.startswith("webui/assets/") for n in names)
 
 
+def test_package_archive_has_no_xattr_headers(tmp_path):
+    """The release is cut on macOS, whose bsdtar stores com.apple.provenance
+    xattrs by default. On the Linux server every `tar -xzf` then prints noisy
+    'Ignoring unknown extended header keyword LIBARCHIVE.xattr...' lines. package()
+    passes --no-xattrs, so the produced archive must carry no xattr pax records.
+    (On Linux CI the source files have no xattrs anyway; this is a real guard on
+    the macOS release machine and documents the intent everywhere.)"""
+    fake_repo = tmp_path / "repo"
+    webui = fake_repo / "speechtotext" / "webui" / "assets"
+    webui.mkdir(parents=True)
+    index = fake_repo / "speechtotext" / "webui" / "index.html"
+    index.write_text("<!doctype html>")
+    (webui / "index-abc.js").write_text("console.log(1)")
+    # Best-effort: stamp a macOS-style xattr so the strip is actually exercised
+    # on machines that support it. Harmless no-op where setxattr is unavailable.
+    try:
+        os.setxattr(index, b"com.apple.provenance", b"test")
+    except (AttributeError, OSError):
+        pass
+
+    out = tmp_path / "out"
+    out.mkdir()
+    res = subprocess.run(
+        [str(SCRIPT), "package", "--tag", "v9.9.9",
+         "--repo-dir", str(fake_repo), "--out-dir", str(out), "--skip-build"],
+        capture_output=True, text=True,
+    )
+    assert res.returncode == 0, res.stderr
+    with tarfile.open(out / "webui-v9.9.9.tar.gz") as tf:
+        offenders = [
+            (m.name, k)
+            for m in tf.getmembers()
+            for k in m.pax_headers
+            if "xattr" in k.lower()
+        ]
+    assert not offenders, f"archive still carries xattr headers: {offenders}"
+
+
 def test_package_stdout_is_only_the_archive_path_when_building(tmp_path):
     """Regression: `publish` mode does `archive="$(package)"`, so package() must
     print ONLY the archive path on stdout — the npm build's own logs must go to
