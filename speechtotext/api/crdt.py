@@ -174,8 +174,7 @@ _SEGMENT_KEY_RE = re.compile(r"^segments\.(\d+)\.text$")
 def _validate_key(op: str, key: str, state: TranscriptState) -> None:
     """Raise ValueError unless `key` is well-formed for `op`.
 
-    edit_segment additionally requires the index to exist in the loaded
-    doc (replay against an empty state skips that check — see merge_op).
+    edit_segment additionally requires the index to exist in the loaded doc.
     """
     if op == OP_RELABEL:
         parts = key.split(".", 1)
@@ -190,7 +189,7 @@ def _validate_key(op: str, key: str, state: TranscriptState) -> None:
             raise ValueError(
                 f"edit_segment expects 'segments.<i>.text' key, got: {key!r}"
             )
-        if state.segment_texts and m.group(1) not in state.segment_texts:
+        if m.group(1) not in state.segment_texts:
             raise ValueError(f"segment index out of range: {m.group(1)}")
 
 

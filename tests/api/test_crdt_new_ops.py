@@ -90,6 +90,16 @@ def test_lww_older_title_op_loses():
     assert [op.value for op in state.history] == ["First", "Second"]
 
 
+def test_edit_segment_on_empty_doc_rejected():
+    doc = _doc()
+    doc["segments"] = []
+    state = TranscriptState.from_json(doc)
+    req = OpRequest(op="edit_segment", key="segments.0.text", value="x",
+                    device="dev-a", lamport_observed=0)
+    with pytest.raises(ValueError, match="segment index"):
+        merge_op(state, req, 0)
+
+
 def test_replay_history_rebuilds_title_and_segments():
     state = TranscriptState.from_json(_doc())
     for req in (
