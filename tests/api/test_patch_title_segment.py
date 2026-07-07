@@ -66,7 +66,6 @@ def test_set_title_persists(client, library_dir):
     assert doc["title"] == "Weekly sync"
 
 
-@pytest.mark.xfail(reason="title indexed in Task 3", strict=True)
 def test_set_title_surfaces_in_library_listing(client, library_dir):
     _write_transcript(library_dir)
     r = _patch_op(client, library_dir, "set_title", "title", "Weekly sync")
