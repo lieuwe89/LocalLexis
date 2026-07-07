@@ -63,3 +63,19 @@ def test_audio_file_missing_404(tmp_path):
 def test_unknown_transcript_404(tmp_path):
     client = _make_client(tmp_path)
     assert client.get("/transcripts/nope/audio").status_code == 404
+
+
+def test_suffix_range(tmp_path):
+    client = _make_client(tmp_path)
+    _write(tmp_path)
+    r = client.get("/transcripts/rec/audio", headers={"Range": "bytes=-10"})
+    assert r.status_code == 206
+    assert len(r.content) == 10
+    assert r.headers["content-range"] == "bytes 94-103/104"
+
+
+def test_malformed_range_416(tmp_path):
+    client = _make_client(tmp_path)
+    _write(tmp_path)
+    r = client.get("/transcripts/rec/audio", headers={"Range": "bytes=abc"})
+    assert r.status_code == 416
