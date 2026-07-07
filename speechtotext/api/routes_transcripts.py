@@ -149,6 +149,28 @@ def get_transcript(tid: str, request: Request) -> dict:
     return doc
 
 
+@router.delete("/transcripts/{tid}")
+def delete_transcript(tid: str, request: Request) -> dict:
+    from speechtotext.api import trash as trash_mod
+    from speechtotext.client.paths import synced_dir
+
+    db = request.app.state.library_db
+    p = db.get_path(tid) or find_sidecar(set(request.app.state.library_dirs), tid)
+    if p is None or not p.exists():
+        raise HTTPException(status_code=404, detail=f"transcript not found: {tid}")
+    runtime = getattr(request.app.state, "hub_runtime", None)
+    if runtime is not None and runtime.joined() and _is_under(p, synced_dir()):
+        raise HTTPException(
+            status_code=409,
+            detail="hub-synced transcript: delete it on the hub instead",
+        )
+    lock = _get_transcript_lock(request.app.state, tid)
+    with lock:
+        trash_mod.trash_transcript(p)
+        db.delete_by_path(p)
+    return {"ok": True, "trashed": True}
+
+
 _RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 
