@@ -112,9 +112,13 @@ class OpRequest:
 class TranscriptState:
     """The mutable parts of a transcript that the CRDT touches.
 
-    Mirrors the v2 transcript JSON shape so :meth:`from_json` /
-    :meth:`to_jsonish` are direct round-trips through ``json.dumps`` /
-    ``json.loads``.
+    :meth:`from_json` reads ``speakers``/``_clocks``/``_history`` plus
+    the derived ``title`` and per-segment ``segment_texts`` straight off
+    the doc. :meth:`to_jsonish` is NOT a full round-trip, though: it only
+    serializes ``speakers``/``_clocks``/``_history``. ``title`` and
+    ``segment_texts`` are written back into the doc's own ``title`` /
+    ``segments[i].text`` fields by the PATCH endpoint
+    (``routes_transcripts.patch_transcript_op``), not by this method.
     """
 
     speakers: dict[str, str] = field(default_factory=dict)
