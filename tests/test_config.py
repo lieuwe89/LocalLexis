@@ -77,3 +77,25 @@ def test_invalid_asr_engine_rejected(tmp_path: Path):
     cfg_file.write_text('asr_engine = "npu"\n')
     with pytest.raises(ValueError, match="asr_engine"):
         load_config(config_path=cfg_file)
+
+
+def test_summarize_defaults_and_parse(tmp_path: Path):
+    cfg = load_config(config_path=tmp_path / "missing.toml")
+    assert cfg.summarize.provider == "lemonade"
+    assert cfg.summarize.base_url == "http://127.0.0.1:13305/api/v1"
+    assert cfg.summarize.model == "Qwen3-30B-A3B-Instruct-2507-GGUF"
+    assert cfg.summarize.api_key is None
+
+    f = tmp_path / "c.toml"
+    f.write_text('[summarize]\nprovider = "openrouter"\nmodel = "X"\napi_key = "k"\n')
+    cfg = load_config(config_path=f)
+    assert cfg.summarize.provider == "openrouter"
+    assert cfg.summarize.model == "X"
+    assert cfg.summarize.api_key == "k"
+
+
+def test_summarize_invalid_provider_raises(tmp_path: Path):
+    cfg_file = tmp_path / "c.toml"
+    cfg_file.write_text('[summarize]\nprovider = "nope"\n')
+    with pytest.raises(ValueError, match="summarize"):
+        load_config(config_path=cfg_file)
