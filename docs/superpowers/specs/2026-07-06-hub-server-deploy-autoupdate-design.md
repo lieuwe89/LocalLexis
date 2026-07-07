@@ -259,15 +259,19 @@ so the spec matches reality.
 
 1. **Bind: loopback, not `0.0.0.0` — Tailscale-only (supersedes the §2 "0.0.0.0 +
    token" row).** `tailscale serve` already listens on the tailnet IP
-   `100.88.123.48:8010`, proxying to `localhost:8010` with TLS. A `0.0.0.0:8010`
+   `100.88.123.48:8010`, forwarding to `localhost:8010`. A `0.0.0.0:8010`
    wildcard bind therefore collides (`EADDRINUSE`) — the headless hub crash-looped
    on startup. Resolution (user decision): keep `LOCALLEXIS_HOST=127.0.0.1`; the
-   hub is reached over the tailnet via the existing `tailscale serve` TLS front at
-   `https://homelab.tail788d49.ts.net:8010/app`. LAN access via
-   `lexis.lab.home.arpa` is **dropped** for now (it would require the hub on a
-   non-loopback interface, which conflicts with `tailscale serve` on `:8010`; the
-   alternatives were a second internal port or removing the TLS front). The token
-   gate still applies — the tailnet is not a trust boundary.
+   hub is reached over the tailnet via the existing `tailscale serve` front at
+   `http://homelab.tail788d49.ts.net:8010/app`. That front is a raw **TCP
+   passthrough** (`TCPForward` to `localhost:8010`), **not** TLS-terminated — so
+   the URL is plain `http://` (WireGuard-encrypted on the wire, no browser cert).
+   A `tailscale serve --tls-terminated-tcp` reconfig would add browser-TLS later
+   if wanted. LAN access via `lexis.lab.home.arpa` is **dropped** for now (it
+   would require the hub on a non-loopback interface, which conflicts with
+   `tailscale serve` on `:8010`; the alternatives were a second internal port or
+   removing the passthrough front). The token gate still applies — the tailnet is
+   not a trust boundary.
 
 2. **Installer: `uv`, not `pip`.** The server venv is `uv`-created (`uv 0.11.26`,
    `pyvenv.cfg`) and has **no `pip`** at all; `uv` lives at `~/.local/bin/uv`,

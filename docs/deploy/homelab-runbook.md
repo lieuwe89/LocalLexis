@@ -21,7 +21,9 @@ Venv: `/home/lieuwe/LocalLexis/.venv`. First release to migrate to: `v0.12.0`.
 `locallexis-hub` keeps the `127.0.0.1:8010` bind — Tailscale `serve` already
 owns `:8010` on the tailnet IP, so a `0.0.0.0` wildcard bind would collide
 (`EADDRINUSE`) — and is reached over the tailnet through the existing Tailscale
-`serve` TLS front (`homelab.tail788d49.ts.net`). Anyone on the tailnet can
+`serve` front, which is a raw **TCP passthrough** (`TCPForward` to
+`localhost:8010`), so the tailnet URL is plain `http://homelab.tail788d49.ts.net:8010`
+(WireGuard-encrypted on the wire, not browser-TLS). Anyone on the tailnet can
 reach the API, so generate a token and gate the service with it before
 switching units.
 
@@ -109,11 +111,13 @@ with `Authorization: Bearer <token>` → `200`.
 From a browser on a tailnet device:
 
 ```
-https://homelab.tail788d49.ts.net:8010/app
+http://homelab.tail788d49.ts.net:8010/app
 ```
 
-should show the login page (Tailscale `serve` terminates TLS here and proxies
-to the loopback hub). Log in with the token from step 1, confirm the Library
+should show the login page. Tailscale `serve` forwards tailnet `:8010` as a raw
+TCP passthrough to the loopback hub, so this is plain `http://` (the transport
+is still WireGuard-encrypted), not browser-TLS — the hub speaks plain HTTP and
+`serve` does not terminate TLS on this port. Log in with the token from step 1, confirm the Library
 loads, and confirm a speaker relabel round-trips (rename a speaker, reload, and
 see the new name persisted).
 
