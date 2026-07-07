@@ -61,7 +61,7 @@ def fake_server(tmp_path):
     ''')
     _stub(bindir, "systemctl", f'echo "systemctl $*" >> "{calls}"; exit 0')
     _stub(bindir, "sudo", f'echo "sudo $*" >> "{calls}"; shift; exec "$@"')
-    _stub(bindir, "pip", f'echo "pip $*" >> "{calls}"; exit ${{FAKE_PIP_RC:-0}}')
+    _stub(bindir, "uv", f'echo "uv $*" >> "{calls}"; exit ${{FAKE_PIP_RC:-0}}')
     _stub(bindir, "curl", f'''
         echo "curl $*" >> "{calls}"
         # emulate -w '%{{http_code}}' health probe

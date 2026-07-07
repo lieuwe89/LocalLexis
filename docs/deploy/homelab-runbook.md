@@ -18,11 +18,12 @@ Venv: `/home/lieuwe/LocalLexis/.venv`. First release to migrate to: `v0.12.0`.
 ## 1. Generate and install the admin token
 
 `stt serve` was unauthenticated because it only ever bound to `127.0.0.1`.
-`locallexis-hub` binds `0.0.0.0:8010` and is fronted by both the LAN
-(`lexis.lab.home.arpa`) and Tailscale `serve` TLS
-(`homelab.tail788d49.ts.net`), so anyone who can reach the host on the LAN or
-tailnet could hit the API. Before switching units, generate a token and gate
-the service with it.
+`locallexis-hub` keeps the `127.0.0.1:8010` bind — Tailscale `serve` already
+owns `:8010` on the tailnet IP, so a `0.0.0.0` wildcard bind would collide
+(`EADDRINUSE`) — and is reached over the tailnet through the existing Tailscale
+`serve` TLS front (`homelab.tail788d49.ts.net`). Anyone on the tailnet can
+reach the API, so generate a token and gate the service with it before
+switching units.
 
 ```bash
 ssh lieuwe@homelab
@@ -61,8 +62,10 @@ rm -rf speechtotext/webui
 tar -xzf /tmp/webui-*.tar.gz -C speechtotext
 
 # Install/upgrade the package and its API extras against the CPU constraint
-# file (avoids pulling CUDA wheels on this CPU-only box).
-.venv/bin/pip install -e ".[api]" -c requirements-server-cpu.txt \
+# file (avoids pulling CUDA wheels on this CPU-only box). This box uses uv
+# (uv-created venv, no pip), so install via uv targeting the venv explicitly.
+uv pip install --python /home/lieuwe/LocalLexis/.venv/bin/python -e ".[api]" \
+    -c requirements-server-cpu.txt \
     --extra-index-url https://download.pytorch.org/whl/cpu
 ```
 
@@ -103,22 +106,16 @@ curl -s -o /dev/null -w '%{http_code}' \
 Expected results: `/app/` → `200`; `/health` with no token → `401`; `/health`
 with `Authorization: Bearer <token>` → `200`.
 
-From a browser on a LAN device:
-
-```
-http://lexis.lab.home.arpa:8010/app
-```
-
-should show the login page. From a browser on a tailnet device:
+From a browser on a tailnet device:
 
 ```
 https://homelab.tail788d49.ts.net:8010/app
 ```
 
-should also show the login page (Tailscale `serve` already terminates TLS
-here). Log in with the token from step 1, confirm the Library loads, and
-confirm a speaker relabel round-trips (rename a speaker, reload, and see the
-new name persisted).
+should show the login page (Tailscale `serve` terminates TLS here and proxies
+to the loopback hub). Log in with the token from step 1, confirm the Library
+loads, and confirm a speaker relabel round-trips (rename a speaker, reload, and
+see the new name persisted).
 
 ---
 
@@ -146,8 +143,8 @@ Sanity-check that every binary the updater calls resolves under the *exact*
 `lieuwe`, so a missing tool here fails silently at 3am, not now):
 
 ```bash
-PATH=/home/lieuwe/LocalLexis/.venv/bin:/usr/bin:/bin \
-    bash -c 'for b in gh git sudo logger curl tar pip; do command -v "$b" || echo "MISSING: $b"; done'
+PATH=/home/lieuwe/.local/bin:/home/lieuwe/LocalLexis/.venv/bin:/usr/bin:/bin \
+    bash -c 'for b in gh git sudo logger curl tar uv; do command -v "$b" || echo "MISSING: $b"; done'
 ```
 
 Every line should print a path; no `MISSING:` lines.

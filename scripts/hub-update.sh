@@ -55,9 +55,10 @@ rollback() {
   log "FAILED ($reason); rolling back to $prev"
   git checkout --quiet "$prev" || true
   fetch_webui "$prev" || log "warn: could not restore webui for $prev"
-  # bare `pip` resolves on PATH: the venv bin (systemd unit) in prod, the stub in tests.
-  pip install -e ".[api]" -c requirements-server-cpu.txt \
-     --extra-index-url "$PIP_INDEX" --quiet || true
+  # uv is the installer on this box (uv-created venv, no pip). Resolves on PATH
+  # via ~/.local/bin (systemd unit / runbook set it), or the stub in tests.
+  uv pip install --python "$VENV/bin/python" -e ".[api]" \
+     -c requirements-server-cpu.txt --extra-index-url "$PIP_INDEX" --quiet || true
   sudo -- systemctl restart "$SERVE_UNIT" "$WATCH_UNIT" || true
   # Marker write is best-effort: never let it abort rollback under `set -e`
   # (e.g. full disk or permission drift on the state dir) — the service is
@@ -96,8 +97,8 @@ health_ok() {
 
 git checkout --quiet "$latest" || rollback "checkout"
 fetch_webui "$latest" || rollback "webui-asset"
-pip install -e ".[api]" -c requirements-server-cpu.txt \
-   --extra-index-url "$PIP_INDEX" --quiet || rollback "pip"
+uv pip install --python "$VENV/bin/python" -e ".[api]" \
+   -c requirements-server-cpu.txt --extra-index-url "$PIP_INDEX" --quiet || rollback "pip"
 sudo -- systemctl restart "$SERVE_UNIT" "$WATCH_UNIT" || rollback "restart"
 health_ok || rollback "health"
 

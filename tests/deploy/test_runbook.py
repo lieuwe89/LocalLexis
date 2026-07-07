@@ -18,7 +18,6 @@ def test_runbook_references_real_repo_files():
     ]:
         assert rel in text, f"runbook should mention {rel}"
         assert (REPO / rel).exists(), f"{rel} referenced but missing"
-    # Mentions the token generation and both reachability URLs.
+    # Mentions the token generation and the tailnet reachability URL.
     assert "openssl rand -hex 32" in text
-    assert "lexis.lab.home.arpa:8010/app" in text
     assert "homelab.tail788d49.ts.net:8010/app" in text

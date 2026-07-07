@@ -10,7 +10,7 @@ def test_noop_when_already_on_newest(fake_server):
     res = fake_server["run"]()
     assert res.returncode == 0, res.stderr
     calls = _read(fake_server["calls"])
-    assert "pip install" not in calls
+    assert "uv pip install" not in calls
     assert "systemctl restart" not in calls
 
 
@@ -18,7 +18,7 @@ def test_dry_run_mutates_nothing(fake_server):
     res = fake_server["run"]("--dry-run")
     assert res.returncode == 0, res.stderr
     calls = _read(fake_server["calls"])
-    assert "pip install" not in calls
+    assert "uv pip install" not in calls
     assert "systemctl restart" not in calls
     # still on v1.0.0
     import subprocess
@@ -38,7 +38,7 @@ def test_happy_update_checks_out_installs_restarts(fake_server):
     assert (fake_server["repo"] / "speechtotext" / "webui" / "index.html").is_file()
     calls = _read(fake_server["calls"])
     assert "gh release download v1.1.0" in calls
-    assert "pip install" in calls
+    assert "uv pip install" in calls
     assert "systemctl restart" in calls
     assert not fake_server["marker"].exists()  # no failure marker on success
 

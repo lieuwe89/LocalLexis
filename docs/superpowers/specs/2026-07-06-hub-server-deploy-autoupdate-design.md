@@ -248,3 +248,36 @@ install (same entry point).
 - [ ] `docs/` migration runbook (this spec §5, expanded to copy-paste commands)
 - [ ] Release `v0.12.0` with `webui-v0.12.0.tar.gz` asset
 - [ ] Live migration on `homelab` + rollback proof (supervised)
+
+---
+
+## 10. Migration findings (2026-07-07) — corrections to §2/§3
+
+The supervised live migration surfaced two facts the design assumed wrong. Both
+were corrected in `v0.12.1` (artifacts + runbook + tests) and are recorded here
+so the spec matches reality.
+
+1. **Bind: loopback, not `0.0.0.0` — Tailscale-only (supersedes the §2 "0.0.0.0 +
+   token" row).** `tailscale serve` already listens on the tailnet IP
+   `100.88.123.48:8010`, proxying to `localhost:8010` with TLS. A `0.0.0.0:8010`
+   wildcard bind therefore collides (`EADDRINUSE`) — the headless hub crash-looped
+   on startup. Resolution (user decision): keep `LOCALLEXIS_HOST=127.0.0.1`; the
+   hub is reached over the tailnet via the existing `tailscale serve` TLS front at
+   `https://homelab.tail788d49.ts.net:8010/app`. LAN access via
+   `lexis.lab.home.arpa` is **dropped** for now (it would require the hub on a
+   non-loopback interface, which conflicts with `tailscale serve` on `:8010`; the
+   alternatives were a second internal port or removing the TLS front). The token
+   gate still applies — the tailnet is not a trust boundary.
+
+2. **Installer: `uv`, not `pip`.** The server venv is `uv`-created (`uv 0.11.26`,
+   `pyvenv.cfg`) and has **no `pip`** at all; `uv` lives at `~/.local/bin/uv`,
+   off the default non-interactive `PATH`. `hub-update.sh`, the runbook install
+   step, and the `hub-update.service` `PATH` were changed to use
+   `uv pip install --python <venv>/bin/python …` and to prepend `~/.local/bin`.
+   The test fixture stubs `uv` instead of `pip`. Without this the daily updater
+   would have failed every run (bare `pip: not found`).
+
+Also fixed while cutting the release: `publish-release.sh` was leaking the `npm`
+build log into `archive="$(package)"` (the release asset upload got a garbage
+multi-line filename); the build now writes to stderr so `package()` prints only
+the archive path. Regression test added.
