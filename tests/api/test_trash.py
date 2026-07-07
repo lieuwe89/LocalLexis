@@ -71,6 +71,27 @@ def test_restore_conflict_raises(tmp_path: Path):
     _make(tmp_path)  # recreate a file at the original path
     with pytest.raises(FileExistsError):
         trash.restore([tmp_path], "rec")
+    t = tmp_path / ".trash" / "rec"
+    assert t.is_dir()
+    assert (t / "rec.json").is_file() and (t / "rec.wav").is_file()
+
+
+def test_trash_rollback_on_partial_failure(tmp_path, monkeypatch):
+    p = _make(tmp_path, "rb")  # json + txt + wav = 3 files to move
+    import speechtotext.api.trash as trashmod
+    real_replace = Path.replace
+    calls = {"n": 0}
+    def flaky(self, target):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("simulated failure")
+        return real_replace(self, target)
+    monkeypatch.setattr(Path, "replace", flaky)
+    with pytest.raises(OSError):
+        trashmod.trash_transcript(p)
+    # rollback: the first-moved file is back at its original location
+    # (all originals present, nothing stranded in the trash dir's moved set)
+    assert p.exists()  # json restored to original path
 
 
 def test_purge_one_and_all(tmp_path: Path):

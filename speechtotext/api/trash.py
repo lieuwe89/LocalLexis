@@ -23,6 +23,25 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _execute_moves(moves: list[tuple[Path, Path]]) -> None:
+    """Apply (src -> dst) renames atomically-ish: on any failure, roll back
+    the moves already done so the operation is all-or-nothing. Same-filesystem
+    renames make each step near-atomic; this bounds the blast radius if one
+    step still fails (e.g. permissions)."""
+    done: list[tuple[Path, Path]] = []
+    try:
+        for src, dst in moves:
+            src.replace(dst)
+            done.append((src, dst))
+    except OSError:
+        for src, dst in reversed(done):
+            try:
+                dst.replace(src)
+            except OSError:
+                pass  # best-effort rollback; original error is what matters
+        raise
+
+
 def trash_transcript(json_path: Path) -> Path:
     """Move a transcript's files into the trash. Returns the trash dir."""
     tid = json_path.stem
@@ -58,8 +77,7 @@ def trash_transcript(json_path: Path) -> Path:
     (dest / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
     )
-    for src, dst in moves:
-        src.replace(dst)
+    _execute_moves(moves)
     return dest
 
 
@@ -119,9 +137,9 @@ def restore(library_dirs: Iterable[Path], tid: str) -> Path:
         if dst.exists():
             raise FileExistsError(f"restore target exists: {dst}")
         moves.append((src, dst))
-    for src, dst in moves:
+    for _, dst in moves:
         dst.parent.mkdir(parents=True, exist_ok=True)
-        src.replace(dst)
+    _execute_moves(moves)
     shutil.rmtree(item)
     return Path(files["json"])
 
