@@ -36,7 +36,9 @@ done
 
 package() {
   if [ "$SKIP_BUILD" -eq 0 ]; then
-    ( cd "$REPO_DIR/ui" && npm run build:hub )
+    # Build logs go to stderr: package() prints ONLY the archive path on stdout
+    # so `archive="$(package)"` in publish mode captures the path, not the noise.
+    ( cd "$REPO_DIR/ui" && npm run build:hub ) 1>&2
   fi
   local bundle="$REPO_DIR/speechtotext/webui"
   [ -f "$bundle/index.html" ] || { echo "no built bundle at $bundle" >&2; exit 1; }
