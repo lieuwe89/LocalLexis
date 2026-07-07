@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
+import re
 import threading
 from contextvars import ContextVar
 from dataclasses import asdict
@@ -9,7 +11,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from speechtotext.api.auth import verify_admin_or_device
@@ -144,6 +147,57 @@ def get_transcript(tid: str, request: Request) -> dict:
         **({"txt": str(txt)} if txt.is_file() else {}),
     }
     return doc
+
+
+_RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+
+@router.get("/transcripts/{tid}/audio")
+def get_transcript_audio(tid: str, request: Request):
+    db = request.app.state.library_db
+    p = db.get_path(tid) or find_sidecar(set(request.app.state.library_dirs), tid)
+    if p is None or not p.exists():
+        raise HTTPException(status_code=404, detail=f"transcript not found: {tid}")
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail=f"failed to read transcript: {exc}")
+    audio_raw = doc.get("audio_path")
+    audio = Path(audio_raw) if audio_raw else None
+    if audio is None or not audio.is_file():
+        raise HTTPException(status_code=404, detail="audio file not found on server")
+
+    media_type = mimetypes.guess_type(audio.name)[0] or "application/octet-stream"
+    size = audio.stat().st_size
+    range_header = request.headers.get("range")
+    if range_header:
+        m = _RANGE_RE.match(range_header.strip())
+        if not m or (not m.group(1) and not m.group(2)):
+            raise HTTPException(status_code=416, detail="malformed Range header")
+        start = int(m.group(1)) if m.group(1) else None
+        end = int(m.group(2)) if m.group(2) else None
+        if start is None:          # suffix form: bytes=-N (last N bytes)
+            start = max(0, size - (end or 0))
+            end = size - 1
+        elif end is None or end >= size:
+            end = size - 1
+        if start >= size or start > end:
+            raise HTTPException(status_code=416, detail="range out of bounds")
+        with audio.open("rb") as fh:
+            fh.seek(start)
+            chunk = fh.read(end - start + 1)
+        return Response(
+            content=chunk,
+            status_code=206,
+            media_type=media_type,
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{size}",
+                "Accept-Ranges": "bytes",
+            },
+        )
+    return FileResponse(
+        audio, media_type=media_type, headers={"Accept-Ranges": "bytes"}
+    )
 
 
 def _is_under(path: Path, root: Path) -> bool:
