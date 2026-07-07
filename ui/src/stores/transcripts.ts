@@ -6,6 +6,9 @@ interface State {
   byId: Record<string, TranscriptDoc>;
   load: (id: string) => Promise<TranscriptDoc>;
   relabel: (id: string, mapping: Record<string, string>) => Promise<void>;
+  patchOp: (id: string, op: string, key: string, value: unknown) => Promise<void>;
+  rename: (id: string, title: string) => Promise<void>;
+  editSegment: (id: string, index: number, text: string) => Promise<void>;
 }
 
 export const useTranscripts = create<State>((set) => ({
@@ -19,5 +22,24 @@ export const useTranscripts = create<State>((set) => ({
     const { platform } = await import('@/platform');
     await platform.relabelTranscript(id, mapping);
     await useTranscripts.getState().load(id);
+  },
+  patchOp: async (id, op, key, value) => {
+    const doc = useTranscripts.getState().byId[id];
+    let observed = 0;
+    for (const c of Object.values(doc?._clocks ?? {})) {
+      if (c && typeof c.lamport === 'number') observed = Math.max(observed, c.lamport);
+    }
+    await api(`/transcripts/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ op, key, value, lamport_observed: observed }),
+    });
+    await useTranscripts.getState().load(id);
+  },
+  rename: async (id, title) => {
+    await useTranscripts.getState().patchOp(id, 'set_title', 'title', title);
+  },
+  editSegment: async (id, index, text) => {
+    await useTranscripts.getState().patchOp(id, 'edit_segment', `segments.${index}.text`, text);
   },
 }));

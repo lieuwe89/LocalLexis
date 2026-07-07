@@ -51,3 +51,32 @@ test('shows the hub badge only on rows whose origin is hub', () => {
   const localRow = screen.getByText('local.mp3').closest('.lib-row')!;
   expect(localRow.querySelector('.origin-badge')).toBeNull();
 });
+
+test('renders both date and time for created_at', () => {
+  const items: TranscriptListItem[] = [
+    { id: 'a', path: '/x/a.json', audio_path: '/Audio/a.mp3', created_at: '2026-07-07T14:32:00+00:00' },
+  ];
+  mocks.libraryState.items = items;
+  mocks.libraryState.all = items;
+
+  render(<LibraryScreen setRoute={vi.fn()} setTid={vi.fn()} />);
+
+  const expected = new Date('2026-07-07T14:32:00+00:00').toLocaleString([], {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  expect(screen.getByText(expected)).toBeTruthy();
+});
+
+test('prefers title over filename for the row name', () => {
+  const items: TranscriptListItem[] = [
+    { id: 'a', path: '/x/a.json', audio_path: '/Audio/original-name.mp3', title: 'Renamed Recording' },
+  ];
+  mocks.libraryState.items = items;
+  mocks.libraryState.all = items;
+
+  render(<LibraryScreen setRoute={vi.fn()} setTid={vi.fn()} />);
+
+  expect(screen.getByText('Renamed Recording')).toBeTruthy();
+  expect(screen.queryByText('original-name.mp3')).toBeNull();
+});

@@ -95,3 +95,44 @@ describe('api retry policy', () => {
     setUnauthorizedHandler(null);
   });
 });
+
+describe('apiBlob', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    sidecarAuthMock.mockReset();
+    resetSidecarAuthMock.mockReset();
+    sidecarAuthMock.mockResolvedValue({ url: 'http://hub.test', token: 'tok' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends a bearer token and returns the Blob from the response', async () => {
+    const fetchMock = vi.fn(async (_input: unknown, _init?: RequestInit) => ({
+      ok: true,
+      status: 200,
+      blob: async () => new Blob([new Uint8Array([1, 2, 3])]),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { apiBlob } = await import('./client');
+    const blob = await apiBlob('/transcripts/x/audio');
+    expect(blob.size).toBe(3);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://hub.test/transcripts/x/audio');
+    const headers = new Headers(init?.headers);
+    expect(headers.get('Authorization')).toBe('Bearer tok');
+  });
+
+  it('rejects with the status code on a non-ok response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 404, text: async () => 'nope' })),
+    );
+
+    const { apiBlob } = await import('./client');
+    await expect(apiBlob('/transcripts/x/audio')).rejects.toThrow(/404/);
+  });
+});

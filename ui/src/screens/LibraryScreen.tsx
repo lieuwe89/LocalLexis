@@ -16,6 +16,13 @@ function fmtDur(s?: number) {
   return `${m}:${ss}`;
 }
 
+function fmtWhen(iso?: string) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso.slice(0, 10);
+  return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 export function LibraryScreen({ setRoute, setTid }: Props) {
   const items = useLibrary(s => s.items);
   const all = useLibrary(s => s.all);
@@ -64,8 +71,8 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
       ) : (
         <div className="lib-list">
           {items.map(i => {
-            const name = (i.audio_path || i.id).split('/').pop() || i.id;
-            const date = i.created_at?.slice(0, 10) || '—';
+            const name = i.title || (i.audio_path || i.id).split('/').pop() || i.id;
+            const when = fmtWhen(i.created_at);
             return (
               <div key={i.id}
                    className={'lib-row' + (i.error ? ' has-error' : '') + (i.snippet_parts && i.snippet_parts.length > 0 ? ' has-snippet' : '')}
@@ -81,7 +88,7 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
                   <span className="dur">{fmtDur(i.duration_seconds)}</span>
                   <span className="spk">{i.speakers ?? 0} speakers</span>
                   <span className="lang">{i.language ?? '—'}</span>
-                  <span className="when">{date}</span>
+                  <span className="when">{when}</span>
                   <span className="status">{i.error ? '⚠' : '✓'}</span>
                   <span className="chev"><Icon name="chev" size={12} /></span>
                 </div>

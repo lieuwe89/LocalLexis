@@ -19,6 +19,12 @@ const mocks = vi.hoisted(() => ({
         debounce_seconds: 2,
         extensions: ['wav', 'mp3'],
       },
+      summarize: {
+        provider: 'lemonade',
+        base_url: '',
+        model: '',
+        api_key_set: false,
+      },
     } satisfies ConfigDto,
     load: vi.fn(),
     patch: vi.fn(),
