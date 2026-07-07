@@ -141,6 +141,17 @@ Confirm it's scheduled:
 systemctl list-timers hub-update.timer
 ```
 
+Sanity-check that every binary the updater calls resolves under the *exact*
+`PATH` the `hub-update.service` unit sets (the timer runs unattended as
+`lieuwe`, so a missing tool here fails silently at 3am, not now):
+
+```bash
+PATH=/home/lieuwe/LocalLexis/.venv/bin:/usr/bin:/bin \
+    bash -c 'for b in gh git sudo logger curl tar pip; do command -v "$b" || echo "MISSING: $b"; done'
+```
+
+Every line should print a path; no `MISSING:` lines.
+
 To trigger an update run immediately instead of waiting for the timer:
 
 ```bash
@@ -152,41 +163,37 @@ journalctl -u hub-update.service -n 30
 
 ## 6. Prove rollback before trusting it
 
-Before relying on the auto-updater unattended, deliberately break a release
-and confirm `hub-update.sh` rolls back cleanly.
+Before relying on the auto-updater unattended, deliberately force its
+health-check to fail and confirm `hub-update.sh` rolls back cleanly.
+
+**Run this as `lieuwe`, NOT under `sudo`.** The script self-elevates only for
+its two `systemctl restart` calls (passwordless sudo). Wrapping the whole
+script in `sudo` would run `git checkout` / `pip install` / the marker write as
+**root**, leaving root-owned files that the next timer run (which executes as
+`lieuwe`) can't touch — silently breaking the updater right after the step
+meant to build confidence in it.
+
+No throwaway tag is needed: `--force` makes the updater re-run against the
+current newest tag (`v0.12.0`), and pointing the health check at a dead port
+forces the `health` rollback branch. `prev` equals `v0.12.0`, so the rollback
+is a no-op checkout that still exercises the full failure → restart → marker →
+exit-1 path. The dead-port URL only affects the script's probe, not the real
+service (which keeps serving `:8010` normally).
 
 ```bash
-# Create a throwaway tag/release whose health check will fail — e.g. by
-# publishing a release where the service would bind the wrong port. The
-# simplest safe way to force a failure without touching real config is to
-# point the health check at a dead port for a single manual run:
 cd /home/lieuwe/LocalLexis
-git tag v0.12.1-broken-test
-git push origin v0.12.1-broken-test
-gh release create v0.12.1-broken-test --repo lieuwe89/LocalLexis \
-    --title "throwaway rollback test" --notes "delete me" \
-    --target v0.12.1-broken-test
-
-# Force the updater to see this tag as latest and fail its health check.
-sudo HUB_HEALTH_URL=http://127.0.0.1:9/health /home/lieuwe/LocalLexis/scripts/hub-update.sh --force
+HUB_HEALTH_URL=http://127.0.0.1:9/health /home/lieuwe/LocalLexis/scripts/hub-update.sh --force
+echo "exit: $?"   # expect 1 (rollback fired)
 ```
 
-Confirm it rolled back to `v0.12.0`, wrote the failure marker, and the service
-is still healthy:
+Confirm it exited 1, wrote the failure marker with `reason=health`, stayed on
+`v0.12.0`, and the real service is still healthy:
 
 ```bash
 git -C /home/lieuwe/LocalLexis describe --tags --exact-match   # expect v0.12.0
-cat /home/lieuwe/.local/state/locallexis/last-update-failure
+cat /home/lieuwe/.local/state/locallexis/last-update-failure   # reason=health ...
 curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer <token>" \
     http://127.0.0.1:8010/health                                # expect 200
-```
-
-Clean up the throwaway tag and release:
-
-```bash
-gh release delete v0.12.1-broken-test --repo lieuwe89/LocalLexis --yes
-git push origin :refs/tags/v0.12.1-broken-test
-git tag -d v0.12.1-broken-test
 ```
 
 ---

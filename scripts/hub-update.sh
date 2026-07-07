@@ -59,8 +59,14 @@ rollback() {
   pip install -e ".[api]" -c requirements-server-cpu.txt \
      --extra-index-url "$PIP_INDEX" --quiet || true
   sudo -- systemctl restart "$SERVE_UNIT" "$WATCH_UNIT" || true
-  mkdir -p "$(dirname "$MARKER")"
-  echo "$(date -Is) failed=$latest reason=$reason rolled_back_to=$prev" > "$MARKER"
+  # Marker write is best-effort: never let it abort rollback under `set -e`
+  # (e.g. full disk or permission drift on the state dir) — the service is
+  # already restarted onto $prev by this point; losing the marker must not
+  # turn a clean rollback into a hard error before the exit-1 signal.
+  local now
+  now="$(date -Is 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+  mkdir -p "$(dirname "$MARKER")" || true
+  echo "$now failed=$latest reason=$reason rolled_back_to=$prev" > "$MARKER" || true
   logger -t hub-update "rollback to $prev after $reason" 2>/dev/null || true
   exit 1
 }
