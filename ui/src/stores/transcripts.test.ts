@@ -43,4 +43,23 @@ describe('patchOp', () => {
     expect(JSON.parse(vi.mocked(api).mock.calls[0][1]!.body as string))
       .toMatchObject({ op: 'edit_segment', key: 'segments.2.text', value: 'fixed' });
   });
+
+  it('summarize posts, polls the job to completion, then reloads', async () => {
+    vi.mocked(api)
+      .mockResolvedValueOnce({ job_id: 'j9' })                        // POST summarize
+      .mockResolvedValueOnce({ id: 'j9', status: 'running' } as any)  // poll 1
+      .mockResolvedValueOnce({ id: 'j9', status: 'complete' } as any) // poll 2
+      .mockResolvedValueOnce({ segments: [] } as any);                // reload doc
+    await useTranscripts.getState().summarize('t1', { pollMs: 1 });
+    expect(vi.mocked(api).mock.calls[0][0]).toBe('/transcripts/t1/summarize');
+    expect(vi.mocked(api).mock.calls[0][1]!.method).toBe('POST');
+  });
+
+  it('summarize rejects when the job fails', async () => {
+    vi.mocked(api)
+      .mockResolvedValueOnce({ job_id: 'j9' })
+      .mockResolvedValueOnce({ id: 'j9', status: 'failed', error: 'cannot reach provider' } as any);
+    await expect(useTranscripts.getState().summarize('t1', { pollMs: 1 }))
+      .rejects.toThrow('cannot reach provider');
+  });
 });

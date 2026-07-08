@@ -30,6 +30,7 @@ export default function App() {
   const relabel = useTranscripts(s => s.relabel);
   const renameTranscript = useTranscripts(s => s.rename);
   const editSegment = useTranscripts(s => s.editSegment);
+  const summarize = useTranscripts(s => s.summarize);
 
   // A rejected admin token (e.g. the hub rotated LOCALLEXIS_API_TOKEN or
   // restarted) makes every api() call 401. Clear the stored token and drop
@@ -82,6 +83,7 @@ export default function App() {
               onRename={async (t) => { await renameTranscript(tid, t); }}
               onDelete={async () => { await removeTranscript(tid); setRoute('library'); }}
               onEditSegment={async (i, t) => { await editSegment(tid, i, t); }}
+              onSummarize={async () => { await summarize(tid); }}
             />
           )}
           {route === 'settings' && <WebSettingsScreen />}

@@ -198,3 +198,42 @@ test('clicking a segment timestamp seeks the audio panel to that segment start',
 
   expect(mockSeek).toHaveBeenCalledWith(doc.segments[0].start);
 });
+
+test('renders stored summary and meta', () => {
+  const summarizedDoc: TranscriptDoc = {
+    ...doc,
+    summary: '## Key points\n- ship',
+    summary_meta: { provider: 'lemonade', model: 'Qwen3-30B', created_at: '2026-07-07T10:00:00Z' },
+  };
+  render(<CompleteScreen doc={summarizedDoc} onRelabel={async () => {}} />);
+
+  expect(screen.getByText(/Key points/)).toBeInTheDocument();
+  expect(screen.getByText(/ship/)).toBeInTheDocument();
+  expect(screen.getByText(/Qwen3-30B/)).toBeInTheDocument();
+});
+
+test('summarize button triggers onSummarize and shows busy state', async () => {
+  let resolveFn: () => void = () => {};
+  const onSummarize = vi.fn(() => new Promise<void>(resolve => { resolveFn = resolve; }));
+  render(<CompleteScreen doc={doc} onRelabel={async () => {}} onSummarize={onSummarize} />);
+
+  const btn = screen.getByLabelText('Summarize transcript');
+  fireEvent.click(btn);
+
+  expect(onSummarize).toHaveBeenCalled();
+  await new Promise(r => setTimeout(r, 0));
+  expect(btn).toBeDisabled();
+
+  resolveFn();
+  await new Promise(r => setTimeout(r, 0));
+});
+
+test('summarize error is shown inline as an alert', async () => {
+  const onSummarize = vi.fn().mockRejectedValue(new Error('cannot reach provider'));
+  render(<CompleteScreen doc={doc} onRelabel={async () => {}} onSummarize={onSummarize} />);
+
+  fireEvent.click(screen.getByLabelText('Summarize transcript'));
+  await new Promise(r => setTimeout(r, 0));
+
+  expect(screen.getByRole('alert')).toHaveTextContent('cannot reach provider');
+});

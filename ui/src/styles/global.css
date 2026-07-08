@@ -741,6 +741,31 @@ input, textarea { font-family: inherit; color: inherit; }
 
 .doc-find .icon-btn { width: 22px; height: 22px; }
 
+/* ─── Summary panel ─── */
+.summary-panel {
+  background: var(--bg-elev); border: 0.5px solid var(--line);
+  border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;
+}
+
+.summary-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+
+.summary-head .lbl {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-dim);
+}
+
+.summary-meta {
+  font-size: 11px; color: var(--ink-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.summary-body {
+  white-space: pre-wrap; font-family: var(--sans); font-size: 14px;
+  line-height: 1.6; color: var(--ink);
+}
+
 /* ─── Transcript body ─── */
 .transcript {
   font-family: var(--serif); font-size: 17px; line-height: 1.7;

@@ -37,6 +37,7 @@ export default function App() {
   const relabel = useTranscripts(s => s.relabel);
   const renameTranscript = useTranscripts(s => s.rename);
   const editSegment = useTranscripts(s => s.editSegment);
+  const summarize = useTranscripts(s => s.summarize);
   const recording = useRecording();
   const activeJob = useJobs(s => (currentJobId ? s.byId[currentJobId] : undefined));
   const jobActive = !!activeJob && (activeJob.status === 'pending' || activeJob.status === 'running');
@@ -117,6 +118,7 @@ export default function App() {
               onRename={async (t) => { await renameTranscript(tid, t); }}
               onDelete={async () => { await removeTranscript(tid); setRouteState('library'); }}
               onEditSegment={async (i, t) => { await editSegment(tid, i, t); }}
+              onSummarize={async () => { await summarize(tid); }}
             />
           )}
           {route === 'record' && (

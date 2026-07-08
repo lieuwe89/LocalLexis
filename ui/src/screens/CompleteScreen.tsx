@@ -15,6 +15,7 @@ interface Props {
   onRename?: (title: string) => Promise<void> | void;
   onDelete?: () => Promise<void> | void;
   onEditSegment?: (index: number, text: string) => Promise<void> | void;
+  onSummarize?: () => Promise<void>;
 }
 
 function fmtTimestamp(secs: number) {
@@ -39,7 +40,7 @@ function highlight(text: string, q: string): ReactNode {
   return parts;
 }
 
-export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRename, onDelete, onEditSegment }: Props) {
+export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRename, onDelete, onEditSegment, onSummarize }: Props) {
   const speakerIds = useMemo(() => Object.keys(doc.speakers), [doc.speakers]);
   const [labels, setLabels] = useState<Record<string, string>>(() => ({ ...doc.speakers }));
   const [applied, setApplied] = useState(true);
@@ -47,6 +48,8 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
   const [segEdit, setSegEdit] = useState<{ i: number; draft: string } | null>(null);
   const [findQ, setFindQ] = useState('');
   const [findIdx, setFindIdx] = useState(0);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
 
   const speakerIndex = useMemo(() => {
     const m: Record<string, number> = {};
@@ -195,6 +198,19 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
               <Icon name="trash" size={15} />
             </button>
           )}
+          {onSummarize && (
+            <button className="icon-btn" aria-label="Summarize transcript"
+                    title={doc.summary ? 'Regenerate summary' : 'Summarize'}
+                    disabled={summarizing}
+                    onClick={async () => {
+                      setSummarizing(true); setSummaryError(null);
+                      try { await onSummarize(); }
+                      catch (e) { setSummaryError(String(e)); }
+                      finally { setSummarizing(false); }
+                    }}>
+              {summarizing ? <span className="activity-spinner" aria-hidden="true" /> : <Icon name="sparkle" size={15} />}
+            </button>
+          )}
         </div>
       </div>
 
@@ -236,6 +252,19 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
           })}
         </div>
       </div>
+
+      {summaryError && <p role="alert" style={{ color: 'var(--ink-error, crimson)' }}>{summaryError}</p>}
+      {doc.summary && (
+        <div className="summary-panel">
+          <div className="summary-head">
+            <span className="lbl">Summary</span>
+            {doc.summary_meta && (
+              <span className="summary-meta">{doc.summary_meta.model} · {new Date(doc.summary_meta.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>
+            )}
+          </div>
+          <div className="summary-body">{doc.summary}</div>
+        </div>
+      )}
 
       <div className="doc-find">
         <Icon name="search" size={13} />
