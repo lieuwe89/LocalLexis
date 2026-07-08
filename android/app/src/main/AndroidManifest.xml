@@ -12,11 +12,17 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
+    <!-- usesCleartextTraffic: hubs may legitimately be plain-http (LAN IPs,
+         tailnet names behind WireGuard — see HubTls.kt "plain-http hubs").
+         Android blocks cleartext by default since API 28, which broke
+         pairing against http:// hub URLs. TLS hubs still get SPKI-pinned
+         clients via HubTls regardless of this flag. -->
     <application
         android:name=".App"
         android:label="@string/app_name"
         android:theme="@style/Theme.LocalLexis"
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:supportsRtl="true">
         <activity
             android:name=".MainActivity"

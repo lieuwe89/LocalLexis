@@ -52,7 +52,28 @@ export function WebSettingsScreen() {
         {error && <p role="alert">{error}</p>}
         {payload && (
           <div className="pairing-block">
-            <QRCodeSVG value={JSON.stringify(payload)} size={220} aria-label="Pairing QR code" />
+            {/* White surround + marginSize give the quiet zone ML Kit needs;
+                without it the code sits flush against the dark panel and
+                phones refuse to scan it (matches native SettingsScreen). */}
+            <div
+              role="img"
+              aria-label="Pairing QR code"
+              style={{
+                display: 'inline-block',
+                background: '#ffffff',
+                padding: '12px',
+                borderRadius: '8px',
+                width: 'fit-content',
+              }}
+            >
+              <QRCodeSVG
+                value={JSON.stringify(payload)}
+                size={220}
+                level="M"
+                marginSize={2}
+                title="LocalLexis pairing code"
+              />
+            </div>
             <textarea readOnly value={JSON.stringify(payload)} rows={4} />
           </div>
         )}
