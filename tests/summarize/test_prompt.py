@@ -30,3 +30,16 @@ def test_unlabelled_speaker_falls_back_to_id():
     del doc["speakers"]["SPEAKER_01"]
     user = build_summary_messages(doc)[1]["content"]
     assert "SPEAKER_01: Hi Alice." in user
+
+
+def test_check_within_budget_ok():
+    from speechtotext.summarize.prompt import check_within_budget
+    check_within_budget([{"role": "user", "content": "short"}])  # no raise
+
+
+def test_check_within_budget_rejects_oversized():
+    from speechtotext.summarize.prompt import check_within_budget, TranscriptTooLongError
+    import pytest
+    huge = [{"role": "user", "content": "x" * 600_000}]  # ~150k tokens
+    with pytest.raises(TranscriptTooLongError, match="too long"):
+        check_within_budget(huge)

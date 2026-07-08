@@ -67,6 +67,25 @@ def test_summarize_provider_failure_fails_job(tmp_path):
     assert "cannot reach provider" in rec["error"]
 
 
+def test_summarize_oversized_transcript_fails_job(tmp_path):
+    client = _client(tmp_path)
+    doc = {
+        "audio_path": str(tmp_path / "huge.wav"), "duration_seconds": 5.0,
+        "language": "en", "speakers": {"S0": "Ann"},
+        "segments": [{"start": 0, "end": 5, "speaker": "S0", "text": "x" * 600_000}],
+        "models": {}, "created_at": "2026-07-07T10:00:00+00:00",
+    }
+    (tmp_path / "huge.json").write_text(json.dumps(doc), encoding="utf-8")
+    client.get("/transcripts")  # prime index
+    with patch("speechtotext.api.runner._summarize_provider") as prov:
+        r = client.post("/transcripts/huge/summarize")
+        assert r.status_code == 202
+        rec = _wait_job(client, r.json()["job_id"])
+        prov.return_value.chat.assert_not_called()
+    assert rec["status"] == "failed"
+    assert "too long" in rec["error"]
+
+
 def test_summarize_unknown_transcript_404(tmp_path):
     client = _client(tmp_path)
     assert client.post("/transcripts/nope/summarize").status_code == 404

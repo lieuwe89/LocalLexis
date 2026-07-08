@@ -22,7 +22,11 @@ from speechtotext.ingest.mic import record_to_file
 from speechtotext.models import ProgressEvent, Transcript
 from speechtotext.pipeline import CancelledError, Pipeline
 from speechtotext.api.workspace import get_workspace_id
-from speechtotext.summarize.prompt import build_summary_messages
+from speechtotext.summarize.prompt import (
+    TranscriptTooLongError,
+    build_summary_messages,
+    check_within_budget,
+)
 from speechtotext.summarize.provider import ProviderError, provider_from_config
 from speechtotext.writer import write_transcript
 
@@ -229,7 +233,9 @@ def run_summarize_job(
             cfg = load_config(config_path=config_path)
             provider = _summarize_provider(cfg)
             doc = json.loads(json_path.read_text(encoding="utf-8"))
-            summary = provider.chat(build_summary_messages(doc))
+            messages = build_summary_messages(doc)
+            check_within_budget(messages)
+            summary = provider.chat(messages)
             emit(StageEvent(stage="summarize", percent=0.9))
             with write_lock:
                 # Re-read under the lock: a CRDT PATCH may have landed
@@ -252,6 +258,8 @@ def run_summarize_job(
                 paths={"json": str(json_path)},
             ))
         except ProviderError as exc:
+            emit(ErrorEvent(message=str(exc)))
+        except TranscriptTooLongError as exc:
             emit(ErrorEvent(message=str(exc)))
         except Exception as exc:  # noqa: BLE001
             emit(ErrorEvent(message=f"{type(exc).__name__}: {exc}"))
