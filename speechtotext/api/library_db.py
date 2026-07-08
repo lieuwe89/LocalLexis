@@ -68,6 +68,7 @@ _DDL = [
         json_path       TEXT NOT NULL UNIQUE,
         audio_path      TEXT,
         audio_basename  TEXT,
+        title           TEXT,
         duration_seconds REAL,
         language        TEXT,
         speakers_count  INTEGER,
@@ -261,6 +262,11 @@ class LibraryDB:
                 )
             except sqlite3.OperationalError:
                 pass  # column already exists (new DB created from _DDL)
+        with self._lock, self._conn:
+            try:
+                self._conn.execute("ALTER TABLE transcripts ADD COLUMN title TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     # ── indexing ──────────────────────────────────────────────────────────
 
@@ -278,12 +284,15 @@ class LibraryDB:
         tid = json_path.stem
         audio_path = doc.get("audio_path")
         audio_basename = Path(audio_path).name if audio_path else json_path.name
+        title = doc.get("title")
+        title = str(title) if title is not None else None
         speakers = doc.get("speakers") or {}
         speaker_count = len(speakers) if isinstance(speakers, dict) else 0
         speaker_labels = _speaker_labels(doc)
         content = _segment_text(doc)
         models = doc.get("models") or {}
         meta = _meta_string(doc, audio_basename)
+        fts_filename = f"{audio_basename} {title}" if title else audio_basename
 
         origin = "local"
         if self._hub_synced_dir is not None:
@@ -297,15 +306,16 @@ class LibraryDB:
             self._conn.execute(
                 """
                 INSERT INTO transcripts (
-                    id, json_path, audio_path, audio_basename,
+                    id, json_path, audio_path, audio_basename, title,
                     duration_seconds, language, speakers_count, speaker_labels,
                     created_at, json_mtime, json_size,
                     models_asr, models_diarizer, error, origin, indexed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     json_path=excluded.json_path,
                     audio_path=excluded.audio_path,
                     audio_basename=excluded.audio_basename,
+                    title=excluded.title,
                     duration_seconds=excluded.duration_seconds,
                     language=excluded.language,
                     speakers_count=excluded.speakers_count,
@@ -324,6 +334,7 @@ class LibraryDB:
                     str(json_path),
                     audio_path,
                     audio_basename,
+                    title,
                     doc.get("duration_seconds"),
                     doc.get("language"),
                     speaker_count,
@@ -347,7 +358,7 @@ class LibraryDB:
             self._conn.execute(
                 "INSERT INTO transcripts_fts (rowid, content, filename, speakers, meta) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (rowid, content, audio_basename, speaker_labels, meta),
+                (rowid, content, fts_filename, speaker_labels, meta),
             )
         return True
 
@@ -454,7 +465,7 @@ class LibraryDB:
         with self._lock:
             rows = self._conn.execute(
                 """
-                SELECT id, json_path, audio_path, duration_seconds, language,
+                SELECT id, json_path, audio_path, title, duration_seconds, language,
                        speakers_count, created_at, models_asr, models_diarizer,
                        error, origin
                 FROM transcripts
@@ -472,7 +483,7 @@ class LibraryDB:
         with self._lock:
             rows = self._conn.execute(
                 """
-                SELECT t.id, t.json_path, t.audio_path, t.duration_seconds,
+                SELECT t.id, t.json_path, t.audio_path, t.title, t.duration_seconds,
                        t.language, t.speakers_count, t.created_at,
                        t.models_asr, t.models_diarizer, t.error, t.origin,
                        snippet(transcripts_fts, 0, ?, ?, '…', 24) AS snippet,
@@ -514,7 +525,7 @@ class LibraryDB:
         with self._lock:
             rows = self._conn.execute(
                 """
-                SELECT id, json_path, audio_path, duration_seconds, language,
+                SELECT id, json_path, audio_path, title, duration_seconds, language,
                        speakers_count, created_at, models_asr, models_diarizer,
                        error, origin, json_mtime
                 FROM transcripts
@@ -561,6 +572,7 @@ class LibraryDB:
             "id": r["id"],
             "path": r["json_path"],
             "audio_path": r["audio_path"],
+            "title": r["title"] if "title" in r.keys() else None,
             "duration_seconds": r["duration_seconds"],
             "language": r["language"],
             "speakers": r["speakers_count"] or 0,

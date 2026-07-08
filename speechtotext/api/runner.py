@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 from speechtotext.api.events import (
@@ -20,6 +22,12 @@ from speechtotext.ingest.mic import record_to_file
 from speechtotext.models import ProgressEvent, Transcript
 from speechtotext.pipeline import CancelledError, Pipeline
 from speechtotext.api.workspace import get_workspace_id
+from speechtotext.summarize.prompt import (
+    TranscriptTooLongError,
+    build_summary_messages,
+    check_within_budget,
+)
+from speechtotext.summarize.provider import ProviderError, provider_from_config
 from speechtotext.writer import write_transcript
 
 
@@ -189,3 +197,76 @@ def stop_record_job(job_id: str) -> bool:
         return False
     ev.set()
     return True
+
+
+def _summarize_provider(cfg):
+    """Indirection point so tests can patch the provider construction."""
+    return provider_from_config(cfg.summarize)
+
+
+def run_summarize_job(
+    registry: JobRegistry,
+    job_id: str,
+    json_path: Path,
+    write_lock: threading.Lock,
+    on_written=None,
+    config_path: Path = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Summarize a transcript with the configured LLM provider.
+
+    `write_lock` is the per-transcript lock from routes_transcripts so a
+    concurrent CRDT PATCH can't interleave with our read-modify-write.
+    `on_written(json_path)` reindexes the library row after the write.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        _own_loop = False
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        _own_loop = True
+
+    emit = _make_emit(loop, registry, job_id)
+
+    def _work() -> None:
+        try:
+            emit(StageEvent(stage="summarize", percent=0.0))
+            cfg = load_config(config_path=config_path)
+            provider = _summarize_provider(cfg)
+            doc = json.loads(json_path.read_text(encoding="utf-8"))
+            messages = build_summary_messages(doc)
+            check_within_budget(messages)
+            summary = provider.chat(messages)
+            emit(StageEvent(stage="summarize", percent=0.9))
+            with write_lock:
+                # Re-read under the lock: a CRDT PATCH may have landed
+                # while the provider was thinking.
+                doc = json.loads(json_path.read_text(encoding="utf-8"))
+                doc["summary"] = summary
+                doc["summary_meta"] = {
+                    "provider": cfg.summarize.provider,
+                    "model": provider.model,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+                content = json.dumps(doc, indent=2, ensure_ascii=False)
+                tmp = json_path.with_suffix(json_path.suffix + ".tmp")
+                tmp.write_text(content, encoding="utf-8")
+                os.replace(tmp, json_path)
+            if on_written:
+                on_written(json_path)
+            emit(CompleteEvent(
+                transcript_id=json_path.stem,
+                paths={"json": str(json_path)},
+            ))
+        except ProviderError as exc:
+            emit(ErrorEvent(message=str(exc)))
+        except TranscriptTooLongError as exc:
+            emit(ErrorEvent(message=str(exc)))
+        except Exception as exc:  # noqa: BLE001
+            emit(ErrorEvent(message=f"{type(exc).__name__}: {exc}"))
+        finally:
+            if _own_loop:
+                loop.call_soon_threadsafe(loop.stop)
+
+    threading.Thread(target=_work, daemon=True).start()
+    if _own_loop:
+        threading.Thread(target=lambda: (loop.run_forever(), loop.close()), daemon=True).start()

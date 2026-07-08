@@ -7,14 +7,17 @@ hand-roll the CRDT instead of pulling in a general-purpose framework
 like Automerge — the savings in dependency weight and audit surface
 are large for the rare-edit workload this supports.
 
-Operations supported in v1
---------------------------
+Operations supported
+--------------------
 
 - ``relabel`` — set ``speakers[<id>]`` = ``<new_name>``.
+- ``set_title`` — set the transcript ``title``.
+- ``edit_segment`` — set ``segments[<i>].text`` = ``<new_text>``.
 
-Keys follow a dotted addressing scheme so future ops (e.g.
-``text_override`` per segment) can slot in without changing the merge
-function. v1 only recognises ``speakers.<speaker_id>`` keys.
+Keys follow a dotted addressing scheme so future ops can slot in
+without changing the merge function. Currently recognised key shapes
+are ``speakers.<speaker_id>`` (relabel), ``title`` (set_title), and
+``segments.<index>.text`` (edit_segment).
 
 Merge rule
 ----------
@@ -36,12 +39,15 @@ log if the live state ever diverges.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
 OP_RELABEL = "relabel"
-SUPPORTED_OPS = frozenset({OP_RELABEL})
+OP_SET_TITLE = "set_title"
+OP_EDIT_SEGMENT = "edit_segment"
+SUPPORTED_OPS = frozenset({OP_RELABEL, OP_SET_TITLE, OP_EDIT_SEGMENT})
 
 
 def now_iso() -> str:
@@ -106,14 +112,20 @@ class OpRequest:
 class TranscriptState:
     """The mutable parts of a transcript that the CRDT touches.
 
-    Mirrors the v2 transcript JSON shape so :meth:`from_json` /
-    :meth:`to_jsonish` are direct round-trips through ``json.dumps`` /
-    ``json.loads``.
+    :meth:`from_json` reads ``speakers``/``_clocks``/``_history`` plus
+    the derived ``title`` and per-segment ``segment_texts`` straight off
+    the doc. :meth:`to_jsonish` is NOT a full round-trip, though: it only
+    serializes ``speakers``/``_clocks``/``_history``. ``title`` and
+    ``segment_texts`` are written back into the doc's own ``title`` /
+    ``segments[i].text`` fields by the PATCH endpoint
+    (``routes_transcripts.patch_transcript_op``), not by this method.
     """
 
     speakers: dict[str, str] = field(default_factory=dict)
     clocks: dict[str, Clock] = field(default_factory=dict)
     history: list[Op] = field(default_factory=list)
+    title: str | None = None
+    segment_texts: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_json(cls, doc: dict) -> "TranscriptState":
@@ -142,7 +154,15 @@ class TranscriptState:
                     ts=str(entry.get("ts", "")),
                 )
             )
-        return cls(speakers=speakers, clocks=clocks, history=history)
+        title = doc.get("title")
+        segment_texts = {
+            str(i): str(seg.get("text", ""))
+            for i, seg in enumerate(doc.get("segments") or [])
+            if isinstance(seg, dict)
+        }
+        return cls(speakers=speakers, clocks=clocks, history=history,
+                   title=str(title) if title is not None else None,
+                   segment_texts=segment_texts)
 
     def to_jsonish(self) -> dict:
         return {
@@ -152,18 +172,56 @@ class TranscriptState:
         }
 
 
+_SEGMENT_KEY_RE = re.compile(r"^segments\.(\d+)\.text$")
+
+
+def _validate_key(op: str, key: str, state: TranscriptState) -> None:
+    """Raise ValueError unless `key` is well-formed for `op`.
+
+    edit_segment additionally requires the index to exist in the loaded doc.
+    """
+    if op == OP_RELABEL:
+        parts = key.split(".", 1)
+        if len(parts) != 2 or parts[0] != "speakers" or not parts[1]:
+            raise ValueError(f"relabel expects 'speakers.<id>' key, got: {key!r}")
+    elif op == OP_SET_TITLE:
+        if key != "title":
+            raise ValueError(f"set_title expects key 'title', got: {key!r}")
+    elif op == OP_EDIT_SEGMENT:
+        m = _SEGMENT_KEY_RE.match(key)
+        if not m:
+            raise ValueError(
+                f"edit_segment expects 'segments.<i>.text' key, got: {key!r}"
+            )
+        if m.group(1) not in state.segment_texts:
+            raise ValueError(f"segment index out of range: {m.group(1)}")
+
+
 def _value_at_key(state: TranscriptState, key: str) -> Any:
     """Resolve dotted key against ``state``. Unknown keys return None."""
     parts = key.split(".", 1)
     if len(parts) == 2 and parts[0] == "speakers":
         return state.speakers.get(parts[1])
+    if key == "title":
+        return state.title
+    m = _SEGMENT_KEY_RE.match(key)
+    if m:
+        return state.segment_texts.get(m.group(1))
     return None
 
 
-def _set_value_at_key(speakers: dict[str, str], key: str, value: Any) -> None:
+def _apply_value(state: TranscriptState, key: str, value: Any) -> None:
+    """Mutate `state` (already a fresh copy in merge_op) at `key`."""
     parts = key.split(".", 1)
     if len(parts) == 2 and parts[0] == "speakers":
-        speakers[parts[1]] = str(value) if value is not None else ""
+        state.speakers[parts[1]] = str(value) if value is not None else ""
+        return
+    if key == "title":
+        state.title = str(value) if value is not None else None
+        return
+    m = _SEGMENT_KEY_RE.match(key)
+    if m:
+        state.segment_texts[m.group(1)] = str(value) if value is not None else ""
         return
     raise ValueError(f"unsupported key for set: {key!r}")
 
@@ -202,12 +260,7 @@ def merge_op(
         raise ValueError(
             f"lamport_observed must be non-negative, got {request.lamport_observed}"
         )
-    # Validate key shape: must be "speakers.<id>" in v1.
-    parts = request.key.split(".", 1)
-    if len(parts) != 2 or parts[0] != "speakers" or not parts[1]:
-        raise ValueError(
-            f"unsupported key in v1 (expected 'speakers.<id>'): {request.key!r}"
-        )
+    _validate_key(request.op, request.key, state)
 
     when = ts if ts is not None else now_iso()
     new_lamport = max(hub_lamport, request.lamport_observed) + 1
@@ -227,19 +280,16 @@ def merge_op(
 
     apply = new_clock.beats(existing_clock)
 
-    new_speakers = dict(state.speakers)
-    new_clocks = dict(state.clocks)
-    new_history = state.history + [op]
-
-    if apply:
-        _set_value_at_key(new_speakers, request.key, request.value)
-        new_clocks[request.key] = new_clock
-
     new_state = TranscriptState(
-        speakers=new_speakers,
-        clocks=new_clocks,
-        history=new_history,
+        speakers=dict(state.speakers),
+        clocks=dict(state.clocks),
+        history=state.history + [op],
+        title=state.title,
+        segment_texts=dict(state.segment_texts),
     )
+    if apply:
+        _apply_value(new_state, request.key, request.value)
+        new_state.clocks[request.key] = new_clock
     return new_state, new_lamport, op
 
 
@@ -258,7 +308,7 @@ def replay_history(history: Iterable[Op]) -> TranscriptState:
         clock = Clock(device=op.device, lamport=op.lamport, ts=op.ts)
         existing = state.clocks.get(op.key)
         if clock.beats(existing):
-            _set_value_at_key(state.speakers, op.key, op.value)
+            _apply_value(state, op.key, op.value)
             state.clocks[op.key] = clock
     # History is presented in chronological-by-(lamport,device) order
     # because the input may be unsorted; callers wanting the "as

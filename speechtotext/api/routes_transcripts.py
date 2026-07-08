@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
+import re
 import threading
+from contextvars import ContextVar
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from speechtotext.api.auth import verify_admin_or_device
@@ -74,6 +78,30 @@ def _atomic_write_json(path: Path, doc: dict) -> None:
     os.replace(tmp, path)
 
 
+def _rewrite_txt_sidecar(json_path: Path, doc: dict) -> None:
+    """Regenerate the human-readable .txt next to the JSON after an edit.
+
+    Mirrors writer.format_txt but works on the raw doc dict so we don't
+    round-trip through the Transcript dataclass (which requires fields a
+    minimal/legacy doc may lack).
+    """
+    from speechtotext.writer import _format_timestamp
+
+    speakers = doc.get("speakers") or {}
+    lines = []
+    for seg in doc.get("segments") or []:
+        spk = seg.get("speaker", "")
+        display = speakers.get(spk, spk)
+        lines.append(
+            f"[{_format_timestamp(float(seg.get('start', 0.0)))}] {display}: {seg.get('text', '')}"
+        )
+    txt = json_path.with_suffix(".txt")
+    content = "\n".join(lines) + ("\n" if lines else "")
+    tmp = txt.with_suffix(txt.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    os.replace(tmp, txt)
+
+
 def _get_transcript_lock(state, tid: str) -> threading.Lock:
     """Return the per-transcript write lock, creating it on first use.
 
@@ -121,6 +149,79 @@ def get_transcript(tid: str, request: Request) -> dict:
     return doc
 
 
+@router.delete("/transcripts/{tid}")
+def delete_transcript(tid: str, request: Request) -> dict:
+    from speechtotext.api import trash as trash_mod
+    from speechtotext.client.paths import synced_dir
+
+    db = request.app.state.library_db
+    p = db.get_path(tid) or find_sidecar(set(request.app.state.library_dirs), tid)
+    if p is None or not p.exists():
+        raise HTTPException(status_code=404, detail=f"transcript not found: {tid}")
+    runtime = getattr(request.app.state, "hub_runtime", None)
+    if runtime is not None and runtime.joined() and _is_under(p, synced_dir()):
+        raise HTTPException(
+            status_code=409,
+            detail="hub-synced transcript: delete it on the hub instead",
+        )
+    lock = _get_transcript_lock(request.app.state, tid)
+    with lock:
+        trash_mod.trash_transcript(p)
+        db.delete_by_path(p)
+    return {"ok": True, "trashed": True}
+
+
+_RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+
+@router.get("/transcripts/{tid}/audio")
+def get_transcript_audio(tid: str, request: Request):
+    db = request.app.state.library_db
+    p = db.get_path(tid) or find_sidecar(set(request.app.state.library_dirs), tid)
+    if p is None or not p.exists():
+        raise HTTPException(status_code=404, detail=f"transcript not found: {tid}")
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail=f"failed to read transcript: {exc}")
+    audio_raw = doc.get("audio_path")
+    audio = Path(audio_raw) if audio_raw else None
+    if audio is None or not audio.is_file():
+        raise HTTPException(status_code=404, detail="audio file not found on server")
+
+    media_type = mimetypes.guess_type(audio.name)[0] or "application/octet-stream"
+    size = audio.stat().st_size
+    range_header = request.headers.get("range")
+    if range_header:
+        m = _RANGE_RE.match(range_header.strip())
+        if not m or (not m.group(1) and not m.group(2)):
+            raise HTTPException(status_code=416, detail="malformed Range header")
+        start = int(m.group(1)) if m.group(1) else None
+        end = int(m.group(2)) if m.group(2) else None
+        if start is None:          # suffix form: bytes=-N (last N bytes)
+            start = max(0, size - (end or 0))
+            end = size - 1
+        elif end is None or end >= size:
+            end = size - 1
+        if start >= size or start > end:
+            raise HTTPException(status_code=416, detail="range out of bounds")
+        with audio.open("rb") as fh:
+            fh.seek(start)
+            chunk = fh.read(end - start + 1)
+        return Response(
+            content=chunk,
+            status_code=206,
+            media_type=media_type,
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{size}",
+                "Accept-Ranges": "bytes",
+            },
+        )
+    return FileResponse(
+        audio, media_type=media_type, headers={"Accept-Ranges": "bytes"}
+    )
+
+
 def _is_under(path: Path, root: Path) -> bool:
     try:
         path.resolve().relative_to(root.resolve())
@@ -129,17 +230,39 @@ def _is_under(path: Path, root: Path) -> bool:
         return False
 
 
-def _forward_relabel_to_hub(
-    request: Request, tid: str, mapping: dict[str, str], p: Path
-) -> dict:
-    """Relabel a hub-origin transcript by forwarding one signed CRDT op
-    per speaker to the hub. The hub applies LWW and the updated doc comes
-    back on the next sync pull, so we deliberately do NOT write the local
-    synced file here (a local write would be clobbered by that pull).
+# Guards against unbounded self-forwarding. Hub-and-spoke is the only
+# supported topology (see docs/superpowers/plans/2026-07-04-hub-client-mode.md);
+# nothing stops a single process from being simultaneously "joined" and the
+# target of its own forwarded op (this happens for real in tests that pair a
+# node to itself via an ASGI-loopback transport, and would also happen if a
+# hub were ever misconfigured to join itself or a downstream peer). Without
+# this guard such a request recurses through the full ASGI stack until
+# RecursionError, which is expensive enough to look like a hang. A ContextVar
+# (not a plain module global) keeps the flag correctly scoped to the request
+# that set it even if the ASGI server ever runs requests concurrently on the
+# same thread (e.g. under an async event loop).
+_forwarding_in_progress: ContextVar[bool] = ContextVar(
+    "_forwarding_in_progress", default=False
+)
 
-    Ops are forwarded one-per-speaker and are NOT atomic: a mid-batch hub
-    failure may leave earlier speakers already applied on the hub. The whole
-    mapping is safe to retry (CRDT relabel is last-writer-wins per key)."""
+
+def _forward_op_to_hub(
+    request: Request, tid: str, ops: list[dict], p: Path
+) -> dict | None:
+    """Forward CRDT ops for a hub-synced transcript to the hub.
+
+    The hub applies LWW and the updated doc comes back on the next sync
+    pull, so we deliberately do NOT write the local synced file here (a
+    local write would be clobbered by that pull).
+
+    Ops are forwarded one at a time and are NOT atomic: a mid-batch hub
+    failure may leave earlier ops already applied on the hub. Each op is
+    safe to retry individually (CRDT merge is last-writer-wins per key).
+    Returns the last op's hub response, or None if forwarding was skipped
+    because a forward is already in progress on this call stack (the
+    caller should fall back to applying the op locally in that case)."""
+    if _forwarding_in_progress.get():
+        return None
     from speechtotext.api import routes_client
     from speechtotext.client import identity as _identity
     from speechtotext.client import state as _state
@@ -152,7 +275,7 @@ def _forward_relabel_to_hub(
 
     # Seed lamport_observed from the highest clock we've synced for this
     # transcript, then chain the hub-assigned lamport across the batch so
-    # successive ops in one relabel aren't demoted.
+    # successive ops aren't demoted.
     try:
         doc = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -166,19 +289,19 @@ def _forward_relabel_to_hub(
         st.hub_url, st.device_id, ident.signing_key(),
         transport=routes_client.sync_test_transport(),
     )
+    result: dict = {}
+    token = _forwarding_in_progress.set(True)
     try:
-        for speaker_id, new_name in mapping.items():
+        for op_body in ops:
             try:
                 result = hub.patch_json(f"/transcripts/{tid}", {
-                    "op": "relabel",
-                    "key": f"speakers.{speaker_id}",
-                    "value": new_name,
+                    **op_body,
                     "lamport_observed": observed,
                 })
             except httpx.HTTPStatusError as exc:
                 raise HTTPException(
                     status_code=502,
-                    detail=f"hub rejected relabel: {exc.response.status_code}",
+                    detail=f"hub rejected op: {exc.response.status_code}",
                 ) from exc
             except httpx.HTTPError as exc:
                 raise HTTPException(
@@ -188,12 +311,38 @@ def _forward_relabel_to_hub(
             if isinstance(la, int):
                 observed = max(observed, la)
     finally:
+        _forwarding_in_progress.reset(token)
         hub.close()
 
     # Pull the hub's authoritative version back promptly so the UI reflects
-    # the relabel without waiting a full sync period.
+    # the change without waiting a full sync period.
     if runtime := getattr(request.app.state, "hub_runtime", None):
         runtime.poke()
+    return result
+
+
+def _forward_relabel_to_hub(
+    request: Request, tid: str, mapping: dict[str, str], p: Path
+) -> dict | None:
+    """Relabel a hub-origin transcript by forwarding one signed CRDT op
+    per speaker to the hub. The hub applies LWW and the updated doc comes
+    back on the next sync pull, so we deliberately do NOT write the local
+    synced file here (a local write would be clobbered by that pull).
+
+    Ops are forwarded one-per-speaker and are NOT atomic: a mid-batch hub
+    failure may leave earlier speakers already applied on the hub. The whole
+    mapping is safe to retry (CRDT relabel is last-writer-wins per key).
+
+    Returns ``None`` (instead of forwarding) if a forward is already in
+    progress on this call stack — see ``_forwarding_in_progress``. Callers
+    should fall back to applying the mapping locally in that case."""
+    ops = [
+        {"op": "relabel", "key": f"speakers.{sid}", "value": name}
+        for sid, name in mapping.items()
+    ]
+    result = _forward_op_to_hub(request, tid, ops, p)
+    if result is None:
+        return None
     return {"ok": True, "forwarded": True}
 
 
@@ -212,7 +361,11 @@ def patch_relabel(tid: str, mapping: dict[str, str], request: Request) -> dict:
     from speechtotext.client.paths import synced_dir
     runtime = getattr(request.app.state, "hub_runtime", None)
     if runtime is not None and runtime.joined() and _is_under(p, synced_dir()):
-        return _forward_relabel_to_hub(request, tid, mapping, p)
+        result = _forward_relabel_to_hub(request, tid, mapping, p)
+        if result is not None:
+            return result
+        # else: a forward is already in progress on this call stack (we ARE
+        # the hub receiving that forwarded op) — apply locally below.
 
     # Take the same per-transcript lock as the CRDT PATCH op: relabel does a
     # read-modify-write on the sidecar JSON, so without it a concurrent
@@ -247,6 +400,23 @@ def patch_transcript_op(
     p = db.get_path(tid) or find_sidecar(set(request.app.state.library_dirs), tid)
     if p is None or not p.exists():
         raise HTTPException(status_code=404, detail=f"transcript not found: {tid}")
+
+    # Hub-origin transcripts (under the synced dir) have this op forwarded to
+    # the hub instead of applied locally; the change round-trips back on the
+    # next sync pull. A local write here would be clobbered by that pull. Do
+    # this OUTSIDE the per-tid lock: the forwarded CRDT PATCH takes its own
+    # lock, and in the loopback-self case holding ours would deadlock.
+    from speechtotext.client.paths import synced_dir
+    runtime = getattr(request.app.state, "hub_runtime", None)
+    if runtime is not None and runtime.joined() and _is_under(p, synced_dir()):
+        resp = _forward_op_to_hub(
+            request, tid,
+            [{"op": body.op, "key": body.key, "value": body.value}], p,
+        )
+        if resp is not None:
+            return PatchResult.model_validate(resp)
+        # else: a forward is already in progress on this call stack (we ARE
+        # the hub receiving that forwarded op) — apply locally below.
 
     # Serialise read-modify-write so two paired devices PATCHing the
     # same transcript can't both read the same on-disk state and have
@@ -287,7 +457,15 @@ def patch_transcript_op(
         doc["speakers"] = dict(new_state.speakers)
         doc["_clocks"] = {k: asdict(c) for k, c in new_state.clocks.items()}
         doc["_history"] = [asdict(op) for op in new_state.history]
+        if new_state.title is not None or "title" in doc:
+            doc["title"] = new_state.title
+        segments = doc.get("segments") or []
+        for idx_str, text in new_state.segment_texts.items():
+            i = int(idx_str)
+            if 0 <= i < len(segments) and segments[i].get("text") != text:
+                segments[i]["text"] = text
         _atomic_write_json(p, doc)
+        _rewrite_txt_sidecar(p, doc)
 
     # speaker_labels participate in FTS, so reindex.
     db.upsert_path(p)

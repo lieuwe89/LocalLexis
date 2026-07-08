@@ -4,6 +4,7 @@ import json
 from fastapi.testclient import TestClient
 
 from speechtotext.api.app import create_app
+from tests.api._signing import signed_headers
 
 
 def _joined_app(tmp_path):
@@ -81,6 +82,88 @@ def test_relabel_forward_hub_error_is_502(tmp_path, monkeypatch):
         resp = client.patch("/transcripts/t1/relabel",
                             json={"SPEAKER_00": "Alice"})
         assert resp.status_code == 502, resp.text
+    finally:
+        routes_client._TEST_TRANSPORT = None
+
+
+def _pair_device(client, name: str = "test-device"):
+    """Pair a fresh device against ``client``. Returns (signing_key, device_id)."""
+    from nacl.signing import SigningKey
+
+    token = client.post("/pair/tokens").json()["token"]
+    sk = SigningKey.generate()
+    r = client.post(
+        "/pair",
+        json={
+            "token": token,
+            "device_pubkey_b64": base64.b64encode(
+                bytes(sk.verify_key)
+            ).decode("ascii"),
+            "device_name": name,
+        },
+    )
+    assert r.status_code == 200, r.text
+    return sk, r.json()["device_id"]
+
+
+def _signed_patch(client, sk, device_id, path, body):
+    """PATCH ``path`` with a body signed by ``sk`` as ``device_id``."""
+    body_bytes = json.dumps(body).encode("utf-8")
+    return client.patch(
+        path,
+        content=body_bytes,
+        headers={
+            "Content-Type": "application/json",
+            **signed_headers(sk, device_id, "PATCH", path, body_bytes),
+        },
+    )
+
+
+def test_patch_op_hub_origin_forwards_set_title(tmp_path):
+    """PATCH /transcripts/{tid} with a set_title op on a hub-synced
+    transcript is forwarded to the hub (_forward_op_to_hub), not applied
+    via the local read-modify-write branch."""
+    from speechtotext.api import routes_client
+    app, client = _joined_app(tmp_path)
+    try:
+        doc_path = _plant_hub_doc(app)
+        sk, device_id = _pair_device(client)
+        resp = _signed_patch(
+            client, sk, device_id, "/transcripts/t1",
+            {"op": "set_title", "key": "title", "value": "Renamed",
+             "lamport_observed": 0},
+        )
+        assert resp.status_code == 200, resp.text
+        # The forward applied the CRDT op on the hub's copy (same file in
+        # this loopback-self setup): title now reflects the new value and
+        # the op was recorded via the forward path (clock + history).
+        doc = json.loads(doc_path.read_text())
+        assert doc["title"] == "Renamed"
+        assert "title" in doc["_clocks"]
+        assert doc["_history"]  # op recorded
+    finally:
+        routes_client._TEST_TRANSPORT = None
+
+
+def test_patch_op_hub_origin_forwards_edit_segment(tmp_path):
+    """PATCH /transcripts/{tid} with an edit_segment op on a hub-synced
+    transcript is forwarded to the hub (_forward_op_to_hub), not applied
+    via the local read-modify-write branch."""
+    from speechtotext.api import routes_client
+    app, client = _joined_app(tmp_path)
+    try:
+        doc_path = _plant_hub_doc(app)
+        sk, device_id = _pair_device(client)
+        resp = _signed_patch(
+            client, sk, device_id, "/transcripts/t1",
+            {"op": "edit_segment", "key": "segments.0.text",
+             "value": "corrected", "lamport_observed": 0},
+        )
+        assert resp.status_code == 200, resp.text
+        doc = json.loads(doc_path.read_text())
+        assert doc["segments"][0]["text"] == "corrected"
+        assert "segments.0.text" in doc["_clocks"]
+        assert doc["_history"]  # op recorded
     finally:
         routes_client._TEST_TRANSPORT = None
 

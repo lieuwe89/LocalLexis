@@ -44,12 +44,7 @@ def post_transcribe(req: TranscribeRequest, request: Request) -> dict:
     return {"job_id": job_id}
 
 
-@router.get("/jobs/{job_id}")
-def get_job(job_id: str, request: Request) -> dict:
-    try:
-        rec = request.app.state.jobs.get(job_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
+def _job_dict(rec) -> dict:
     return {
         "id": rec.id,
         "kind": rec.kind,
@@ -61,6 +56,24 @@ def get_job(job_id: str, request: Request) -> dict:
         "audio_path": rec.audio_path,
         "paths": rec.paths,
     }
+
+
+@router.get("/jobs")
+def list_jobs(request: Request, active: bool = False) -> list[dict]:
+    from speechtotext.api.jobs import JobStatus
+    recs = request.app.state.jobs.all()
+    if active:
+        recs = [r for r in recs if r.status in (JobStatus.pending, JobStatus.running)]
+    return [_job_dict(r) for r in recs]
+
+
+@router.get("/jobs/{job_id}")
+def get_job(job_id: str, request: Request) -> dict:
+    try:
+        rec = request.app.state.jobs.get(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
+    return _job_dict(rec)
 
 
 @router.get("/jobs/{job_id}/stream")

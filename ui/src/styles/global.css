@@ -618,7 +618,22 @@ input, textarea { font-family: inherit; color: inherit; }
 .doc-head h1 {
   font-family: var(--serif); font-size: 28px; font-weight: 400;
   letter-spacing: -0.012em; margin: 0; color: var(--ink);
+  display: flex; align-items: center; gap: 8px;
 }
+
+.doc-head h1 .icon-btn {
+  opacity: 0.6;
+}
+.doc-head h1 .icon-btn:hover { opacity: 1; }
+
+.title-input {
+  font-family: var(--serif); font-size: 28px; font-weight: 400;
+  letter-spacing: -0.012em; color: var(--ink);
+  background: var(--bg); border: 0.5px solid var(--accent-line);
+  border-radius: 6px; padding: 2px 8px; outline: none;
+  width: 100%; max-width: 480px;
+}
+.title-input:focus { border-color: var(--accent); }
 
 .subline {
   font-size: 12.5px; color: var(--ink-dim);
@@ -638,6 +653,21 @@ input, textarea { font-family: inherit; color: inherit; }
 .icon-btn:hover { background: var(--bg-elev); color: var(--ink); }
 .icon-btn:disabled { opacity: 0.35; cursor: default; }
 .icon-btn:disabled:hover { background: transparent; color: var(--ink-dim); }
+
+/* ─── Audio playback panel ─── */
+.audio-panel {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 0 2px;
+}
+
+.audio-panel audio {
+  flex: 1; height: 32px;
+}
+
+.audio-panel.audio-unavailable {
+  color: var(--ink-dim); font-style: italic; font-size: 13px;
+  padding: 8px 0;
+}
 
 /* ─── Relabel panel ─── */
 .relabel {
@@ -692,6 +722,50 @@ input, textarea { font-family: inherit; color: inherit; }
   color: var(--ink-dim); cursor: default; filter: none;
 }
 
+/* ─── In-transcript search ─── */
+.doc-find {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-elev); border: 0.5px solid var(--line); border-radius: 6px;
+  padding: 8px 12px; color: var(--ink-dim);
+}
+
+.doc-find input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--ink); font-family: var(--sans); font-size: 13px;
+}
+
+.doc-find .find-count {
+  font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+  white-space: nowrap;
+}
+
+.doc-find .icon-btn { width: 22px; height: 22px; }
+
+/* ─── Summary panel ─── */
+.summary-panel {
+  background: var(--bg-elev); border: 0.5px solid var(--line);
+  border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;
+}
+
+.summary-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+
+.summary-head .lbl {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-dim);
+}
+
+.summary-meta {
+  font-size: 11px; color: var(--ink-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.summary-body {
+  white-space: pre-wrap; font-family: var(--sans); font-size: 14px;
+  line-height: 1.6; color: var(--ink);
+}
+
 /* ─── Transcript body ─── */
 .transcript {
   font-family: var(--serif); font-size: 17px; line-height: 1.7;
@@ -709,6 +783,14 @@ input, textarea { font-family: inherit; color: inherit; }
   color: var(--ink-dim); text-align: right; padding-top: 4px;
 }
 
+.transcript .turn .ts-seek {
+  cursor: pointer; border-radius: 4px; transition: background 0.1s, color 0.1s;
+}
+
+.transcript .turn .ts-seek:hover {
+  background: var(--bg-elev); color: var(--accent);
+}
+
 .transcript .turn .spk {
   font-family: var(--serif); font-style: italic;
   font-size: 14px; color: var(--ink-muted);
@@ -722,6 +804,35 @@ input, textarea { font-family: inherit; color: inherit; }
 .transcript .turn p { margin: 0; color: var(--ink); }
 
 .transcript .turn p em { color: var(--ink-dim); font-style: normal; }
+
+.transcript .turn p mark {
+  background: var(--accent-faint); color: var(--accent);
+  padding: 0 2px; border-radius: 2px; font-style: normal;
+}
+
+.transcript .turn.find-current {
+  background: var(--accent-faint); border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--accent-line, var(--accent));
+}
+
+.transcript .turn .seg-edit-btn {
+  width: 20px; height: 20px; margin-left: 8px; opacity: 0;
+  vertical-align: middle; transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+
+.transcript .turn:hover .seg-edit-btn { opacity: 0.55; }
+
+.transcript .turn .seg-edit-btn:hover { opacity: 1; }
+
+.seg-edit {
+  font-family: var(--serif); font-size: 17px; line-height: 1.7;
+  color: var(--ink); background: var(--bg);
+  border: 0.5px solid var(--accent-line); border-radius: 6px;
+  padding: 4px 8px; outline: none; resize: vertical;
+  width: 100%; box-sizing: border-box;
+}
+
+.seg-edit:focus { border-color: var(--accent); }
 
 .transcript.view-inline .turn {
   grid-template-columns: 1fr; gap: 2px;
@@ -915,7 +1026,7 @@ input, textarea { font-family: inherit; color: inherit; }
 .lib-row:hover { background: var(--bg-hover); }
 .lib-row-main {
   display: grid;
-  grid-template-columns: 22px 1fr 60px 100px 40px 90px 22px 16px;
+  grid-template-columns: 22px 1fr 60px 100px 40px 90px 22px 28px 28px 16px;
   align-items: center; gap: 14px;
   font-size: 13px;
 }
@@ -964,6 +1075,22 @@ input, textarea { font-family: inherit; color: inherit; }
   animation: lib-spin 0.8s linear infinite;
 }
 @keyframes lib-spin { to { transform: rotate(360deg); } }
+
+.lib-row .row-action {
+  width: 24px; height: 24px;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+.lib-row:hover .row-action { opacity: 1; }
+.lib-row .row-action:hover { color: var(--ink); background: var(--bg-elev); }
+
+.rename-input {
+  background: var(--bg); border: 0.5px solid var(--accent-line);
+  border-radius: 5px; padding: 4px 7px; font-size: 13px;
+  color: var(--ink); outline: none; width: 100%;
+  font-family: var(--sans);
+}
+.rename-input:focus { border-color: var(--accent); }
 
 /* ─────────── Watch folder screen ─────────── */
 .watch { max-width: 920px; margin: 0 auto; padding: 36px 40px 80px; display: flex; flex-direction: column; gap: 22px; }
@@ -1040,6 +1167,42 @@ input, textarea { font-family: inherit; color: inherit; }
 .web-sidebar button:hover { background: var(--bg-hover); color: var(--ink); }
 .web-sidebar button[aria-current="true"] {
   background: var(--bg-active); color: var(--ink);
+}
+
+/* ─── Activity chip (transcription/summarize progress, App.web.tsx) ───
+   Mounted in .web-sidebar; must carry its own high-contrast styling per the
+   lesson above — bare/unstyled web elements render illegibly. */
+.activity-chip {
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-elev);
+  color: var(--ink);
+  border-radius: var(--rad-sm);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.activity-spinner {
+  width: 12px; height: 12px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: transparent;
+  animation: activity-spin 0.8s linear infinite;
+}
+@keyframes activity-spin {
+  to { transform: rotate(360deg); }
+}
+.activity-more {
+  color: var(--ink-muted);
+  background: var(--bg-elev-2);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 /* ─── Hub web-only screens (login + settings) ───

@@ -3,6 +3,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import { api } from '../../api/client';
 import { buildWebPairingPayload } from '../../lib/pairing';
 import type { PairingPayloadV1, MintedToken } from '../../lib/pairing';
+import { SettingsForm } from '../settings/SettingsForm';
+import { SummarizeSettings } from '../settings/SummarizeSettings';
+import { TrashSection } from '../settings/TrashSection';
 
 // Matches the shape returned by GET /devices/paired (see native
 // SettingsScreen.tsx's PairedDevice interface) — kept narrow to just the
@@ -45,7 +48,10 @@ export function WebSettingsScreen() {
   };
 
   return (
-    <div className="web-settings">
+    <div className="web-settings settings">
+      <SettingsForm />
+      <SummarizeSettings />
+      <TrashSection />
       <section>
         <h2>Pair a device</h2>
         <button onClick={mint}>Mint pairing code</button>

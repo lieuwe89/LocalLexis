@@ -59,3 +59,18 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   throw lastErr;
 }
+
+// Binary variant of api(): same auth + error semantics, returns a Blob.
+// Used for audio playback/download — <audio src> can't send bearer headers,
+// so we fetch the bytes ourselves and mount an object URL.
+export async function apiBlob(path: string): Promise<Blob> {
+  const info = await sidecarInfo();
+  const r = await fetch(info.url + path, {
+    headers: { Authorization: `Bearer ${info.token}` },
+  });
+  if (!r.ok) {
+    if (r.status === 401) onUnauthorized?.();
+    throw new Error(`${r.status} ${path}: ${await r.text()}`);
+  }
+  return r.blob();
+}

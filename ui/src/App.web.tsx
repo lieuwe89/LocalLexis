@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import './styles/global.css';
 import { Window } from './chrome/Window';
+import { ActivityChip } from './chrome/ActivityChip';
 import { LibraryScreen } from './screens/LibraryScreen';
 import { CompleteScreen } from './screens/CompleteScreen';
 import { WebSettingsScreen } from './screens/web/WebSettingsScreen';
@@ -24,8 +25,12 @@ export default function App() {
   const [route, setRoute] = useState<WebRoute>('library');
   const [tid, setTid] = useState<string | null>(null);
   const refreshLibrary = useLibrary(s => s.refresh);
+  const removeTranscript = useLibrary(s => s.remove);
   const currentDoc = useTranscripts(s => (tid ? s.byId[tid] : undefined));
   const relabel = useTranscripts(s => s.relabel);
+  const renameTranscript = useTranscripts(s => s.rename);
+  const editSegment = useTranscripts(s => s.editSegment);
+  const summarize = useTranscripts(s => s.summarize);
 
   // A rejected admin token (e.g. the hub rotated LOCALLEXIS_API_TOKEN or
   // restarted) makes every api() call 401. Clear the stored token and drop
@@ -54,6 +59,7 @@ export default function App() {
       <nav className="web-sidebar">
         <button aria-current={route === 'library'} onClick={() => setRoute('library')}>Library</button>
         <button aria-current={route === 'settings'} onClick={() => setRoute('settings')}>Settings</button>
+        <ActivityChip />
       </nav>
       <div className="main">
         {/* .main-body owns the scroll (overflow: auto). The native App.tsx
@@ -72,7 +78,12 @@ export default function App() {
               doc={currentDoc}
               txtPath={currentDoc.paths?.txt}
               jsonPath={currentDoc.paths?.json}
+              tid={tid}
               onRelabel={async (m) => { await relabel(tid, m); }}
+              onRename={async (t) => { await renameTranscript(tid, t); }}
+              onDelete={async () => { await removeTranscript(tid); setRoute('library'); }}
+              onEditSegment={async (i, t) => { await editSegment(tid, i, t); }}
+              onSummarize={async () => { await summarize(tid); }}
             />
           )}
           {route === 'settings' && <WebSettingsScreen />}

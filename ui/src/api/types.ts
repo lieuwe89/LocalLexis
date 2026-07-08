@@ -29,6 +29,7 @@ export interface TranscriptListItem {
   models?: Record<string, string>;
   error?: string;
   origin?: 'local' | 'hub';
+  title?: string | null;
   /**
    * Plain-text snippet parts from FTS5. Each part is either a normal
    * fragment (`match: false`) or a matched fragment to highlight with
@@ -55,6 +56,10 @@ export interface TranscriptDoc {
   models: Record<string, string>;
   created_at: string;
   paths?: { json?: string; txt?: string };
+  title?: string | null;
+  summary?: string;
+  summary_meta?: { provider: string; model: string; created_at: string };
+  _clocks?: Record<string, { device: string; lamport: number; ts: string }>;
 }
 
 export interface AudioDeviceDto {
@@ -73,4 +78,12 @@ export interface ConfigDto {
   model_cache_dir: string;
   default_out_dir: string | null;
   watch: { recursive: boolean; debounce_seconds: number; extensions: string[] };
+  summarize: { provider: 'lemonade' | 'openrouter' | 'custom'; base_url: string; model: string; api_key_set: boolean };
+}
+
+export interface TrashItem {
+  tid: string;
+  title: string | null;
+  deleted_at: string | null;
+  size_bytes: number;
 }

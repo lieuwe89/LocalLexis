@@ -33,6 +33,7 @@ _TOP_KEYS = (
     "default_out_dir",
 )
 _WATCH_KEYS = ("recursive", "debounce_seconds", "extensions")
+_SUMMARIZE_KEYS = ("provider", "base_url", "model", "api_key")
 
 
 class WatchPatch(BaseModel):
@@ -52,6 +53,21 @@ class WatchPatch(BaseModel):
         return v
 
 
+class SummarizePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: Literal["lemonade", "openrouter", "custom"] | None = None
+    base_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    model: str | None = Field(default=None, min_length=1, max_length=256)
+    api_key: str | None = Field(default=None, max_length=512)
+
+    @field_validator("base_url", "model", "api_key")
+    @classmethod
+    def _no_null_bytes(cls, v: str | None) -> str | None:
+        if v is not None and "\x00" in v:
+            raise ValueError("null byte in value")
+        return v
+
+
 class ConfigPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     backend: Literal["auto", "cpu", "cuda", "mps"] | None = None
@@ -63,6 +79,7 @@ class ConfigPatch(BaseModel):
     model_cache_dir: str | None = Field(default=None, max_length=4096)
     default_out_dir: str | None = Field(default=None, max_length=4096)
     watch: WatchPatch | None = None
+    summarize: SummarizePatch | None = None
 
     @field_validator(
         "asr_model",
@@ -93,6 +110,12 @@ def _public(cfg) -> dict:
             "recursive": cfg.watch.recursive,
             "debounce_seconds": cfg.watch.debounce_seconds,
             "extensions": list(cfg.watch.extensions),
+        },
+        "summarize": {
+            "provider": cfg.summarize.provider,
+            "base_url": cfg.summarize.base_url,
+            "model": cfg.summarize.model,
+            "api_key_set": bool(cfg.summarize.api_key),
         },
     }
 
@@ -127,6 +150,13 @@ def _dump_toml(d: dict[str, Any]) -> str:
         for k in _WATCH_KEYS:
             if k in watch:
                 lines.append(f"{k} = {_toml_value(watch[k])}")
+    summarize = d.get("summarize")
+    if isinstance(summarize, dict):
+        lines.append("")
+        lines.append("[summarize]")
+        for k in _SUMMARIZE_KEYS:
+            if k in summarize:
+                lines.append(f"{k} = {_toml_value(summarize[k])}")
     return "\n".join(lines) + "\n"
 
 
@@ -173,6 +203,14 @@ def patch_config(updates: ConfigPatch) -> dict:
             for k, v in patch["watch"].items():
                 watch_existing[k] = v
             existing["watch"] = watch_existing
+
+        if "summarize" in patch:
+            summarize_existing = existing.get("summarize")
+            if not isinstance(summarize_existing, dict):
+                summarize_existing = {}
+            for k, v in patch["summarize"].items():
+                summarize_existing[k] = v
+            existing["summarize"] = summarize_existing
 
         _atomic_write(path, _dump_toml(existing))
         return _public(load_config(config_path=path))
