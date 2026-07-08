@@ -199,8 +199,8 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
             </button>
           )}
           {onSummarize && (
-            <button className="icon-btn" aria-label="Summarize transcript"
-                    title={doc.summary ? 'Regenerate summary' : 'Summarize'}
+            <button className="btn-summarize" aria-label="Summarize transcript"
+                    title={doc.summary ? 'Regenerate the summary' : 'Summarize this transcript'}
                     disabled={summarizing}
                     onClick={async () => {
                       setSummarizing(true); setSummaryError(null);
@@ -208,7 +208,10 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
                       catch (e) { setSummaryError(String(e)); }
                       finally { setSummarizing(false); }
                     }}>
-              {summarizing ? <span className="activity-spinner" aria-hidden="true" /> : <Icon name="sparkle" size={15} />}
+              {summarizing
+                ? <span className="activity-spinner" aria-hidden="true" />
+                : <Icon name="sparkle" size={14} />}
+              <span>{summarizing ? 'Summarizing…' : doc.summary ? 'Regenerate' : 'Summarize'}</span>
             </button>
           )}
         </div>

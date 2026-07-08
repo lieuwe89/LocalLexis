@@ -43,3 +43,13 @@ def test_check_within_budget_rejects_oversized():
     huge = [{"role": "user", "content": "x" * 600_000}]  # ~150k tokens
     with pytest.raises(TranscriptTooLongError, match="too long"):
         check_within_budget(huge)
+
+
+def test_system_prompt_flags_spoken_asr_nature():
+    """The summarizer must know it's reading imperfect ASR output of speech,
+    so it compensates for mis-transcriptions instead of quoting them."""
+    sysmsg = build_summary_messages(_doc())[0]["content"].lower()
+    assert "speech recognition" in sysmsg
+    assert "spoken" in sysmsg
+    # tells the model to infer intended meaning through transcription errors
+    assert "mis" in sysmsg  # misheard / mis-transcription

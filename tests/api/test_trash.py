@@ -144,3 +144,12 @@ def test_restore_conflict_409(tmp_path: Path):
     client.delete("/transcripts/dup")
     _make(tmp_path, "dup")
     assert client.post("/trash/dup/restore").status_code == 409
+
+
+def test_incoming_dir_registered_as_library_dir(tmp_path: Path):
+    """Regression: hub uploads are transcribed into incoming_dir, so deletes
+    trash them to incoming_dir/.trash. If incoming_dir isn't a library dir,
+    a freshly-restarted hub reports an empty /trash even though the files are
+    on disk (it's otherwise only added lazily on the next job completion)."""
+    app = create_app(library_db_path=tmp_path / "library.db")
+    assert app.state.incoming_dir in app.state.library_dirs

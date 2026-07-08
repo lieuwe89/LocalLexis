@@ -212,6 +212,13 @@ def create_app(
 
         app.state.incoming_dir = library_db_module.default_app_data_dir() / "incoming"
 
+    # The hub transcribes uploads into incoming_dir, so trashed uploads land
+    # in incoming_dir/.trash. Register it as a library dir at startup so
+    # /trash (and restore/purge) can see them — otherwise incoming is only
+    # added lazily on the next job completion, and a freshly-restarted hub
+    # reports an empty trash even though deleted uploads are on disk.
+    app.state.library_dirs.add(app.state.incoming_dir)
+
     def _on_complete_dir(dir_path: Path) -> None:
         app.state.library_dirs.add(dir_path)
         # Re-sync just this directory so the new transcript is searchable

@@ -218,11 +218,14 @@ test('summarize button triggers onSummarize and shows busy state', async () => {
   render(<CompleteScreen doc={doc} onRelabel={async () => {}} onSummarize={onSummarize} />);
 
   const btn = screen.getByLabelText('Summarize transcript');
+  // Carries a visible text label (not just an icon + hover tooltip).
+  expect(btn.textContent).toContain('Summarize');
   fireEvent.click(btn);
 
   expect(onSummarize).toHaveBeenCalled();
   await new Promise(r => setTimeout(r, 0));
   expect(btn).toBeDisabled();
+  expect(btn.textContent).toContain('Summarizing');
 
   resolveFn();
   await new Promise(r => setTimeout(r, 0));

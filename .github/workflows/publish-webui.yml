@@ -1,0 +1,57 @@
+name: publish-webui
+# Build the hub web-UI bundle and attach it to the GitHub Release for a tag.
+#
+# The homelab auto-updater (scripts/hub-update.sh) downloads a
+# `webui-<tag>.tar.gz` release asset because the server has no Node to build
+# the browser bundle itself. That step used to be manual (scripts/publish-
+# release.sh) and was routinely skipped, so every nightly update failed at
+# "no assets match the file pattern" and rolled back. This makes it automatic:
+# every `v*` tag publishes the asset, so the server can actually self-update.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)publish the webui asset for'
+        required: true
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: pnpm/action-setup@v3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - name: Install web deps
+        run: cd ui && pnpm install --frozen-lockfile
+      - name: Build hub bundle
+        run: cd ui && pnpm build:hub
+      - name: Verify bundle is tauri-free
+        run: |
+          n=$(grep -rl @tauri-apps speechtotext/webui | wc -l | tr -d ' ')
+          echo "tauri refs in hub bundle: $n"
+          test "$n" = "0"
+      - name: Resolve tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          [ -n "$TAG" ] || TAG="${GITHUB_REF#refs/tags/}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Package + upload webui asset to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/publish-release.sh publish --tag "${{ steps.tag.outputs.tag }}" --skip-build

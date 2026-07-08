@@ -654,6 +654,18 @@ input, textarea { font-family: inherit; color: inherit; }
 .icon-btn:disabled { opacity: 0.35; cursor: default; }
 .icon-btn:disabled:hover { background: transparent; color: var(--ink-dim); }
 
+/* Summarize is the primary AI action — a labelled pill, not a bare icon, so
+   it reads at a glance without relying on a hover tooltip. */
+.btn-summarize {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 10px; border-radius: 6px;
+  border: 1px solid var(--rule); background: var(--bg-elev);
+  color: var(--ink); font: inherit; font-size: 0.82rem; cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.btn-summarize:hover { background: var(--accent-faint, var(--bg-elev)); border-color: var(--accent-line, var(--rule)); }
+.btn-summarize:disabled { opacity: 0.6; cursor: default; }
+
 /* ─── Audio playback panel ─── */
 .audio-panel {
   display: flex; align-items: center; gap: 10px;
