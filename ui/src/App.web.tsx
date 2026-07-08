@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import './styles/global.css';
 import { Window } from './chrome/Window';
+import { ActivityChip } from './chrome/ActivityChip';
 import { LibraryScreen } from './screens/LibraryScreen';
 import { CompleteScreen } from './screens/CompleteScreen';
 import { WebSettingsScreen } from './screens/web/WebSettingsScreen';
@@ -57,6 +58,7 @@ export default function App() {
       <nav className="web-sidebar">
         <button aria-current={route === 'library'} onClick={() => setRoute('library')}>Library</button>
         <button aria-current={route === 'settings'} onClick={() => setRoute('settings')}>Settings</button>
+        <ActivityChip />
       </nav>
       <div className="main">
         {/* .main-body owns the scroll (overflow: auto). The native App.tsx
