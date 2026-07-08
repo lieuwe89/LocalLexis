@@ -9,6 +9,8 @@ interface Props {
   txtPath?: string;
   jsonPath?: string;
   onRelabel: (mapping: Record<string, string>) => Promise<void> | void;
+  onRename?: (title: string) => Promise<void> | void;
+  onDelete?: () => Promise<void> | void;
 }
 
 function fmtTimestamp(secs: number) {
@@ -18,10 +20,11 @@ function fmtTimestamp(secs: number) {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel }: Props) {
+export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, onDelete }: Props) {
   const speakerIds = useMemo(() => Object.keys(doc.speakers), [doc.speakers]);
   const [labels, setLabels] = useState<Record<string, string>>(() => ({ ...doc.speakers }));
   const [applied, setApplied] = useState(true);
+  const [titleEdit, setTitleEdit] = useState<string | null>(null);
 
   const speakerIndex = useMemo(() => {
     const m: Record<string, number> = {};
@@ -65,7 +68,8 @@ export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel }: Props) {
     ? `${Math.floor(doc.duration_seconds / 60)}:${Math.floor(doc.duration_seconds % 60).toString().padStart(2, '0')}`
     : '—';
   const model = doc.models?.asr?.split(':')[1] || doc.models?.asr || '—';
-  const title = doc.audio_path?.split('/').pop()?.replace(/\.[^.]+$/, '') || 'Transcript';
+  const fileTitle = doc.audio_path?.split('/').pop()?.replace(/\.[^.]+$/, '') || 'Transcript';
+  const title = doc.title || fileTitle;
 
   return (
     <div className="complete">
@@ -76,7 +80,35 @@ export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel }: Props) {
             <span style={{ color: 'var(--ink-faint)' }}>·</span>
             <span>local</span>
           </div>
-          <h1>{title}</h1>
+          {titleEdit !== null ? (
+            <input
+              className="title-input"
+              autoFocus
+              value={titleEdit}
+              onChange={e => setTitleEdit(e.target.value)}
+              onKeyDown={async e => {
+                if (e.key === 'Enter') {
+                  if (titleEdit.trim()) {
+                    await onRename?.(titleEdit.trim());
+                    setTitleEdit(null);
+                  }
+                } else if (e.key === 'Escape') {
+                  setTitleEdit(null);
+                }
+              }}
+              onBlur={() => setTitleEdit(null)}
+            />
+          ) : (
+            <h1>
+              {title}
+              {onRename && (
+                <button className="icon-btn" aria-label="Rename transcript" title="Rename"
+                  onClick={() => setTitleEdit(title)}>
+                  <Icon name="pencil" size={14} />
+                </button>
+              )}
+            </h1>
+          )}
           <div className="subline">
             <span>{dur}</span><span className="sep">·</span>
             <span>{speakerIds.length} speakers</span><span className="sep">·</span>
@@ -105,6 +137,16 @@ export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel }: Props) {
           >
             <Icon name="braces" size={15} />
           </button>
+          {onDelete && (
+            <button className="icon-btn" aria-label="Delete transcript" title="Move to trash"
+              onClick={async () => {
+                if (window.confirm(`Move '${title}' to trash?\n\nYou can restore it from Settings → Trash.`)) {
+                  await onDelete();
+                }
+              }}>
+              <Icon name="trash" size={15} />
+            </button>
+          )}
         </div>
       </div>
 

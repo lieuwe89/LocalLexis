@@ -52,3 +52,39 @@ test('editing a relabel input enables Apply and calls onRelabel with changed map
   await new Promise(r => setTimeout(r, 0));
   expect(onRelabel).toHaveBeenCalledWith({ SPEAKER_00: 'Carol' });
 });
+
+test('title edit calls onRename', async () => {
+  const onRename = vi.fn().mockResolvedValue(undefined);
+  render(<CompleteScreen doc={doc} onRelabel={async () => {}} onRename={onRename} />);
+
+  fireEvent.click(screen.getByLabelText('Rename transcript'));
+  const input = screen.getByDisplayValue('meet');
+  fireEvent.change(input, { target: { value: '' } });
+  fireEvent.change(input, { target: { value: 'New title' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+
+  await new Promise(r => setTimeout(r, 0));
+
+  expect(onRename).toHaveBeenCalledWith('New title');
+});
+
+test('shows doc.title over filename when set', () => {
+  const titledDoc = { ...doc, title: 'Custom' };
+  render(<CompleteScreen doc={titledDoc} onRelabel={async () => {}} />);
+  expect(screen.getByText('Custom')).toBeInTheDocument();
+  expect(screen.queryByText('meet')).toBeNull();
+});
+
+test('delete button confirms then calls onDelete', async () => {
+  const onDelete = vi.fn().mockResolvedValue(undefined);
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  render(<CompleteScreen doc={doc} onRelabel={async () => {}} onDelete={onDelete} />);
+
+  fireEvent.click(screen.getByLabelText('Delete transcript'));
+  await new Promise(r => setTimeout(r, 0));
+
+  expect(confirmSpy).toHaveBeenCalled();
+  expect(onDelete).toHaveBeenCalled();
+
+  confirmSpy.mockRestore();
+});

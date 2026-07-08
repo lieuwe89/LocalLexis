@@ -12,6 +12,7 @@ interface State {
   searching: boolean;
   refresh: () => Promise<void>;
   search: (q: string) => Promise<void>;
+  remove: (id: string) => Promise<void>;
 }
 
 export const useLibrary = create<State>((set, get) => ({
@@ -41,5 +42,9 @@ export const useLibrary = create<State>((set, get) => ({
     } catch {
       if (get().query === q) set({ searching: false });
     }
+  },
+  remove: async (id: string) => {
+    await api(`/transcripts/${id}`, { method: 'DELETE' });
+    await get().refresh();
   },
 }));

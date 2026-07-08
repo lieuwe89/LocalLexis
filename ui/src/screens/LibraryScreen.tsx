@@ -29,8 +29,11 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
   const refresh = useLibrary(s => s.refresh);
   const search = useLibrary(s => s.search);
   const searching = useLibrary(s => s.searching);
+  const remove = useLibrary(s => s.remove);
   const load = useTranscripts(s => s.load);
+  const rename = useTranscripts(s => s.rename);
   const [q, setQ] = useState('');
+  const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -81,15 +84,49 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
                    }}>
                 <div className="lib-row-main">
                   <span className="ico"><Icon name="doc" size={14} /></span>
-                  <span className="name">
-                    {name}
-                    {i.origin === 'hub' && <span className="origin-badge" title="Synced from hub">hub</span>}
-                  </span>
+                  {editing?.id === i.id ? (
+                    <input
+                      className="rename-input"
+                      autoFocus
+                      value={editing.draft}
+                      onClick={e => e.stopPropagation()}
+                      onChange={e => setEditing({ id: i.id, draft: e.target.value })}
+                      onKeyDown={async e => {
+                        if (e.key === 'Enter') {
+                          if (editing.draft.trim()) {
+                            await rename(i.id, editing.draft.trim());
+                            setEditing(null);
+                            refresh();
+                          }
+                        } else if (e.key === 'Escape') {
+                          setEditing(null);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span className="name">
+                      {name}
+                      {i.origin === 'hub' && <span className="origin-badge" title="Synced from hub">hub</span>}
+                    </span>
+                  )}
                   <span className="dur">{fmtDur(i.duration_seconds)}</span>
                   <span className="spk">{i.speakers ?? 0} speakers</span>
                   <span className="lang">{i.language ?? '—'}</span>
                   <span className="when">{when}</span>
                   <span className="status">{i.error ? '⚠' : '✓'}</span>
+                  <button className="icon-btn row-action" aria-label={`Rename ${name}`} title="Rename"
+                    onClick={e => { e.stopPropagation(); setEditing({ id: i.id, draft: i.title || name }); }}>
+                    <Icon name="pencil" size={13} />
+                  </button>
+                  <button className="icon-btn row-action" aria-label={`Delete ${name}`} title="Move to trash"
+                    onClick={async e => {
+                      e.stopPropagation();
+                      if (window.confirm(`Move '${name}' to trash?\n\nYou can restore it from Settings → Trash.`)) {
+                        await remove(i.id).catch(err => window.alert(`Delete failed: ${err}`));
+                      }
+                    }}>
+                    <Icon name="trash" size={13} />
+                  </button>
                   <span className="chev"><Icon name="chev" size={12} /></span>
                 </div>
                 {i.snippet_parts && i.snippet_parts.length > 0 && (

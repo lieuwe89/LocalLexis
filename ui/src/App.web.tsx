@@ -24,8 +24,10 @@ export default function App() {
   const [route, setRoute] = useState<WebRoute>('library');
   const [tid, setTid] = useState<string | null>(null);
   const refreshLibrary = useLibrary(s => s.refresh);
+  const removeTranscript = useLibrary(s => s.remove);
   const currentDoc = useTranscripts(s => (tid ? s.byId[tid] : undefined));
   const relabel = useTranscripts(s => s.relabel);
+  const renameTranscript = useTranscripts(s => s.rename);
 
   // A rejected admin token (e.g. the hub rotated LOCALLEXIS_API_TOKEN or
   // restarted) makes every api() call 401. Clear the stored token and drop
@@ -73,6 +75,8 @@ export default function App() {
               txtPath={currentDoc.paths?.txt}
               jsonPath={currentDoc.paths?.json}
               onRelabel={async (m) => { await relabel(tid, m); }}
+              onRename={async (t) => { await renameTranscript(tid, t); }}
+              onDelete={async () => { await removeTranscript(tid); setRoute('library'); }}
             />
           )}
           {route === 'settings' && <WebSettingsScreen />}
