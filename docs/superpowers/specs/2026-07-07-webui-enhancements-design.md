@@ -100,7 +100,7 @@ downloaded include `Qwen3-30B-A3B-Instruct-2507-GGUF` (default choice), `Qwen3-8
   provider = "lemonade"            # lemonade | openrouter | custom
   base_url = "http://127.0.0.1:13305/api/v1"
   model = "Qwen3-30B-A3B-Instruct-2507-GGUF"
-  api_key = ""                     # stored via secrets_store like hf_token
+  api_key = ""                     # plaintext in config.toml, like hf_token; exposed only as api_key_set
   ```
   Exposed through `GET/PATCH /config` (api_key write-only, reported as `api_key_set`).
 - Endpoints:
