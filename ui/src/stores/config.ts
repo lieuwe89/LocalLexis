@@ -2,10 +2,15 @@ import { create } from 'zustand';
 import { api } from '../api/client';
 import type { ConfigDto } from '../api/types';
 
+type ConfigPatch = Partial<Omit<ConfigDto, 'summarize'>> & {
+  hf_token?: string;
+  summarize?: Partial<ConfigDto['summarize']> & { api_key?: string };
+};
+
 interface State {
   cfg: ConfigDto | null;
   load: () => Promise<void>;
-  patch: (updates: Partial<ConfigDto> & { hf_token?: string }) => Promise<void>;
+  patch: (updates: ConfigPatch) => Promise<void>;
 }
 
 export const useConfig = create<State>((set) => ({
