@@ -80,7 +80,7 @@ export function RecordScreen({
 
       <div className="privacy-note">
         <Icon name="lock" size={11} stroke={1.4} />
-        Audio is captured to disk · <code style={{ fontFamily: 'var(--mono)', color: 'var(--ink-muted)' }}>{outputPath}</code> · never sent over the network.
+        Audio is captured to disk · <code style={{ fontFamily: 'var(--mono)', color: 'var(--ink-muted)' }}>{outputPath}</code> · processed on your own device.
       </div>
     </div>
   );
