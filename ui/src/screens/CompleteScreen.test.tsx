@@ -5,6 +5,14 @@ import type { TranscriptDoc } from '../api/types';
 
 Element.prototype.scrollIntoView = vi.fn();
 
+const mockSeek = vi.fn();
+vi.mock('./AudioPanel', () => ({
+  AudioPanel: ({ onReady }: { onReady?: (seek: (secs: number) => void) => void }) => {
+    onReady?.(mockSeek);
+    return null;
+  },
+}));
+
 vi.mock('@/platform', () => ({
   platform: {
     sidecarAuth: vi.fn(async () => ({ url: 'http://127.0.0.1:8010', token: 't' })),
@@ -177,4 +185,16 @@ test('no matches shows 0 / 0 and no marks', () => {
 
   expect(screen.getByText('0 / 0')).toBeInTheDocument();
   expect(document.querySelectorAll('mark').length).toBe(0);
+});
+
+test('clicking a segment timestamp seeks the audio panel to that segment start', () => {
+  mockSeek.mockClear();
+  const { container } = render(<CompleteScreen doc={doc} onRelabel={async () => {}} tid="t1" />);
+
+  const tsCells = container.querySelectorAll('.ts-seek');
+  expect(tsCells.length).toBeGreaterThan(0);
+  expect(tsCells[0].getAttribute('role')).toBe('button');
+  fireEvent.click(tsCells[0]);
+
+  expect(mockSeek).toHaveBeenCalledWith(doc.segments[0].start);
 });

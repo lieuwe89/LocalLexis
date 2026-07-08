@@ -75,6 +75,7 @@ export default function App() {
               doc={currentDoc}
               txtPath={currentDoc.paths?.txt}
               jsonPath={currentDoc.paths?.json}
+              tid={tid}
               onRelabel={async (m) => { await relabel(tid, m); }}
               onRename={async (t) => { await renameTranscript(tid, t); }}
               onDelete={async () => { await removeTranscript(tid); setRoute('library'); }}

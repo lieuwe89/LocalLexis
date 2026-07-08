@@ -4,11 +4,13 @@ import { Icon } from '../primitives/Icon';
 import { SPEAKER_COLORS } from '../primitives/colors';
 import type { TranscriptDoc } from '../api/types';
 import { platform } from '@/platform';
+import { AudioPanel } from './AudioPanel';
 
 interface Props {
   doc: TranscriptDoc;
   txtPath?: string;
   jsonPath?: string;
+  tid?: string;
   onRelabel: (mapping: Record<string, string>) => Promise<void> | void;
   onRename?: (title: string) => Promise<void> | void;
   onDelete?: () => Promise<void> | void;
@@ -37,7 +39,7 @@ function highlight(text: string, q: string): ReactNode {
   return parts;
 }
 
-export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, onDelete, onEditSegment }: Props) {
+export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRename, onDelete, onEditSegment }: Props) {
   const speakerIds = useMemo(() => Object.keys(doc.speakers), [doc.speakers]);
   const [labels, setLabels] = useState<Record<string, string>>(() => ({ ...doc.speakers }));
   const [applied, setApplied] = useState(true);
@@ -94,6 +96,8 @@ export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, on
 
   useEffect(() => { setFindIdx(0); }, [findQ]);
   const currentMatchSeg = matches.length ? matches[findIdx % matches.length] : null;
+
+  const seekRef = useRef<((secs: number) => void) | null>(null);
 
   const segRefs = useRef<Record<number, HTMLDivElement | null>>({});
   useEffect(() => {
@@ -194,6 +198,14 @@ export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, on
         </div>
       </div>
 
+      {tid && (
+        <AudioPanel
+          tid={tid}
+          filename={doc.audio_path?.split('/').pop() || `${title}.audio`}
+          onReady={fn => { seekRef.current = fn; }}
+        />
+      )}
+
       <div className="relabel">
         <div className="relabel-head">
           <span className="lbl">Speakers · {speakerIds.length} detected</span>
@@ -249,7 +261,8 @@ export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, on
           return (
             <div key={i} className={'turn' + (i === currentMatchSeg ? ' find-current' : '')}
                  ref={el => { segRefs.current[i] = el; }}>
-              <div className="ts">{fmtTimestamp(seg.start)}</div>
+              <div className="ts ts-seek" role="button" title="Play from here"
+                   onClick={() => seekRef.current?.(seg.start)}>{fmtTimestamp(seg.start)}</div>
               <div className="spk" data-ts={fmtTimestamp(seg.start)}>
                 <span className="dot" style={{ background: SPEAKER_COLORS[idx % SPEAKER_COLORS.length] }} />
                 {labels[seg.speaker] || seg.speaker}

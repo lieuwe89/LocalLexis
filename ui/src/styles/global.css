@@ -654,6 +654,21 @@ input, textarea { font-family: inherit; color: inherit; }
 .icon-btn:disabled { opacity: 0.35; cursor: default; }
 .icon-btn:disabled:hover { background: transparent; color: var(--ink-dim); }
 
+/* ─── Audio playback panel ─── */
+.audio-panel {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 0 2px;
+}
+
+.audio-panel audio {
+  flex: 1; height: 32px;
+}
+
+.audio-panel.audio-unavailable {
+  color: var(--ink-dim); font-style: italic; font-size: 13px;
+  padding: 8px 0;
+}
+
 /* ─── Relabel panel ─── */
 .relabel {
   background: var(--bg-elev); border: 0.5px solid var(--line);
@@ -741,6 +756,14 @@ input, textarea { font-family: inherit; color: inherit; }
 .transcript .turn .ts {
   font-family: var(--mono); font-size: 11px;
   color: var(--ink-dim); text-align: right; padding-top: 4px;
+}
+
+.transcript .turn .ts-seek {
+  cursor: pointer; border-radius: 4px; transition: background 0.1s, color 0.1s;
+}
+
+.transcript .turn .ts-seek:hover {
+  background: var(--bg-elev); color: var(--accent);
 }
 
 .transcript .turn .spk {
