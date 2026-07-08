@@ -707,6 +707,25 @@ input, textarea { font-family: inherit; color: inherit; }
   color: var(--ink-dim); cursor: default; filter: none;
 }
 
+/* ─── In-transcript search ─── */
+.doc-find {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-elev); border: 0.5px solid var(--line); border-radius: 6px;
+  padding: 8px 12px; color: var(--ink-dim);
+}
+
+.doc-find input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--ink); font-family: var(--sans); font-size: 13px;
+}
+
+.doc-find .find-count {
+  font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+  white-space: nowrap;
+}
+
+.doc-find .icon-btn { width: 22px; height: 22px; }
+
 /* ─── Transcript body ─── */
 .transcript {
   font-family: var(--serif); font-size: 17px; line-height: 1.7;
@@ -737,6 +756,16 @@ input, textarea { font-family: inherit; color: inherit; }
 .transcript .turn p { margin: 0; color: var(--ink); }
 
 .transcript .turn p em { color: var(--ink-dim); font-style: normal; }
+
+.transcript .turn p mark {
+  background: var(--accent-faint); color: var(--accent);
+  padding: 0 2px; border-radius: 2px; font-style: normal;
+}
+
+.transcript .turn.find-current {
+  background: var(--accent-faint); border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--accent-line, var(--accent));
+}
 
 .transcript .turn .seg-edit-btn {
   width: 20px; height: 20px; margin-left: 8px; opacity: 0;

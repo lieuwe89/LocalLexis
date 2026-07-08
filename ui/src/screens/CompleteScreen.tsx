@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { Icon } from '../primitives/Icon';
 import { SPEAKER_COLORS } from '../primitives/colors';
 import type { TranscriptDoc } from '../api/types';
@@ -21,12 +22,29 @@ function fmtTimestamp(secs: number) {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+function highlight(text: string, q: string): ReactNode {
+  if (!q) return text;
+  const lower = text.toLowerCase();
+  const ql = q.toLowerCase();
+  const parts: ReactNode[] = [];
+  let pos = 0;
+  for (let hit = lower.indexOf(ql); hit !== -1; hit = lower.indexOf(ql, pos)) {
+    if (hit > pos) parts.push(text.slice(pos, hit));
+    parts.push(<mark key={hit}>{text.slice(hit, hit + q.length)}</mark>);
+    pos = hit + q.length;
+  }
+  parts.push(text.slice(pos));
+  return parts;
+}
+
 export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, onDelete, onEditSegment }: Props) {
   const speakerIds = useMemo(() => Object.keys(doc.speakers), [doc.speakers]);
   const [labels, setLabels] = useState<Record<string, string>>(() => ({ ...doc.speakers }));
   const [applied, setApplied] = useState(true);
   const [titleEdit, setTitleEdit] = useState<string | null>(null);
   const [segEdit, setSegEdit] = useState<{ i: number; draft: string } | null>(null);
+  const [findQ, setFindQ] = useState('');
+  const [findIdx, setFindIdx] = useState(0);
 
   const speakerIndex = useMemo(() => {
     const m: Record<string, number> = {};
@@ -63,6 +81,30 @@ export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, on
       await onRelabel(changed);
     }
     setApplied(true);
+  };
+
+  const matches = useMemo(() => {
+    const q = findQ.trim().toLowerCase();
+    if (!q) return [];
+    return doc.segments.reduce<number[]>((acc, s, i) => {
+      if (s.text.toLowerCase().includes(q)) acc.push(i);
+      return acc;
+    }, []);
+  }, [doc.segments, findQ]);
+
+  useEffect(() => { setFindIdx(0); }, [findQ]);
+  const currentMatchSeg = matches.length ? matches[findIdx % matches.length] : null;
+
+  const segRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  useEffect(() => {
+    if (currentMatchSeg !== null) {
+      segRefs.current[currentMatchSeg]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [currentMatchSeg]);
+
+  const step = (dir: 1 | -1) => {
+    if (!matches.length) return;
+    setFindIdx(i => (i + dir + matches.length) % matches.length);
   };
 
   const date = doc.created_at ? new Date(doc.created_at).toLocaleDateString() : '—';
@@ -183,11 +225,30 @@ export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, on
         </div>
       </div>
 
+      <div className="doc-find">
+        <Icon name="search" size={13} />
+        <input
+          aria-label="Search in transcript"
+          placeholder="Find in transcript…"
+          value={findQ}
+          onChange={e => setFindQ(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') step(e.shiftKey ? -1 : 1); }}
+        />
+        {findQ.trim() && (
+          <>
+            <span className="find-count">{matches.length ? `${(findIdx % matches.length) + 1} / ${matches.length}` : '0 / 0'}</span>
+            <button className="icon-btn" aria-label="Previous match" onClick={() => step(-1)}>↑</button>
+            <button className="icon-btn" aria-label="Next match" onClick={() => step(1)}>↓</button>
+          </>
+        )}
+      </div>
+
       <div className="transcript">
         {doc.segments.map((seg, i) => {
           const idx = speakerIndex[seg.speaker] ?? 0;
           return (
-            <div key={i} className="turn">
+            <div key={i} className={'turn' + (i === currentMatchSeg ? ' find-current' : '')}
+                 ref={el => { segRefs.current[i] = el; }}>
               <div className="ts">{fmtTimestamp(seg.start)}</div>
               <div className="spk" data-ts={fmtTimestamp(seg.start)}>
                 <span className="dot" style={{ background: SPEAKER_COLORS[idx % SPEAKER_COLORS.length] }} />
@@ -212,7 +273,7 @@ export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, on
                 />
               ) : (
                 <p>
-                  {seg.text}
+                  {highlight(seg.text, findQ.trim())}
                   {onEditSegment && (
                     <button className="icon-btn seg-edit-btn" aria-label={`Edit line ${i + 1}`}
                             title="Edit line" onClick={() => setSegEdit({ i, draft: seg.text })}>

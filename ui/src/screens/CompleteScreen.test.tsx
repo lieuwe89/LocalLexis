@@ -3,6 +3,8 @@ import { CompleteScreen } from './CompleteScreen';
 import { vi } from 'vitest';
 import type { TranscriptDoc } from '../api/types';
 
+Element.prototype.scrollIntoView = vi.fn();
+
 vi.mock('@/platform', () => ({
   platform: {
     sidecarAuth: vi.fn(async () => ({ url: 'http://127.0.0.1:8010', token: 't' })),
@@ -131,4 +133,48 @@ test('no edit buttons when onEditSegment is not provided', () => {
   render(<CompleteScreen doc={segDoc} onRelabel={async () => {}} />);
   expect(screen.queryByLabelText('Edit line 1')).toBeNull();
   expect(screen.queryByLabelText('Edit line 2')).toBeNull();
+});
+
+const findDoc: TranscriptDoc = {
+  ...doc,
+  segments: [
+    { start: 0, end: 5, speaker: 'SPEAKER_00', text: 'hello world' },
+    { start: 5, end: 10, speaker: 'SPEAKER_01', text: 'the world turns' },
+    { start: 10, end: 15, speaker: 'SPEAKER_00', text: 'goodbye' },
+  ],
+};
+
+test('search highlights matches and shows the count', () => {
+  render(<CompleteScreen doc={findDoc} onRelabel={async () => {}} />);
+  const input = screen.getByLabelText('Search in transcript');
+  fireEvent.change(input, { target: { value: 'world' } });
+
+  const marks = document.querySelectorAll('mark');
+  expect(marks.length).toBe(2);
+  marks.forEach(m => expect(m.textContent).toBe('world'));
+
+  expect(screen.getByText('1 / 2')).toBeInTheDocument();
+});
+
+test('next/prev cycle wraps around matches', () => {
+  render(<CompleteScreen doc={findDoc} onRelabel={async () => {}} />);
+  const input = screen.getByLabelText('Search in transcript');
+  fireEvent.change(input, { target: { value: 'world' } });
+
+  expect(screen.getByText('1 / 2')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByLabelText('Next match'));
+  expect(screen.getByText('2 / 2')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByLabelText('Next match'));
+  expect(screen.getByText('1 / 2')).toBeInTheDocument();
+});
+
+test('no matches shows 0 / 0 and no marks', () => {
+  render(<CompleteScreen doc={findDoc} onRelabel={async () => {}} />);
+  const input = screen.getByLabelText('Search in transcript');
+  fireEvent.change(input, { target: { value: 'zzzznotfound' } });
+
+  expect(screen.getByText('0 / 0')).toBeInTheDocument();
+  expect(document.querySelectorAll('mark').length).toBe(0);
 });
