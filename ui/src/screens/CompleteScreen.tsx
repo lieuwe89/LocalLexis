@@ -11,6 +11,7 @@ interface Props {
   onRelabel: (mapping: Record<string, string>) => Promise<void> | void;
   onRename?: (title: string) => Promise<void> | void;
   onDelete?: () => Promise<void> | void;
+  onEditSegment?: (index: number, text: string) => Promise<void> | void;
 }
 
 function fmtTimestamp(secs: number) {
@@ -20,11 +21,12 @@ function fmtTimestamp(secs: number) {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, onDelete }: Props) {
+export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, onDelete, onEditSegment }: Props) {
   const speakerIds = useMemo(() => Object.keys(doc.speakers), [doc.speakers]);
   const [labels, setLabels] = useState<Record<string, string>>(() => ({ ...doc.speakers }));
   const [applied, setApplied] = useState(true);
   const [titleEdit, setTitleEdit] = useState<string | null>(null);
+  const [segEdit, setSegEdit] = useState<{ i: number; draft: string } | null>(null);
 
   const speakerIndex = useMemo(() => {
     const m: Record<string, number> = {};
@@ -191,7 +193,34 @@ export function CompleteScreen({ doc, txtPath, jsonPath, onRelabel, onRename, on
                 <span className="dot" style={{ background: SPEAKER_COLORS[idx % SPEAKER_COLORS.length] }} />
                 {labels[seg.speaker] || seg.speaker}
               </div>
-              <p>{seg.text}</p>
+              {segEdit?.i === i ? (
+                <textarea
+                  className="seg-edit" autoFocus rows={2} value={segEdit.draft}
+                  onChange={e => setSegEdit({ i, draft: e.target.value })}
+                  onKeyDown={async e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (segEdit.draft.trim() && segEdit.draft !== seg.text) {
+                        await onEditSegment?.(i, segEdit.draft.trim());
+                      }
+                      setSegEdit(null);
+                    } else if (e.key === 'Escape') {
+                      setSegEdit(null);
+                    }
+                  }}
+                  onBlur={() => setSegEdit(null)}
+                />
+              ) : (
+                <p>
+                  {seg.text}
+                  {onEditSegment && (
+                    <button className="icon-btn seg-edit-btn" aria-label={`Edit line ${i + 1}`}
+                            title="Edit line" onClick={() => setSegEdit({ i, draft: seg.text })}>
+                      <Icon name="pencil" size={12} />
+                    </button>
+                  )}
+                </p>
+              )}
             </div>
           );
         })}

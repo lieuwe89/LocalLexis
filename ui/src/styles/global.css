@@ -738,6 +738,25 @@ input, textarea { font-family: inherit; color: inherit; }
 
 .transcript .turn p em { color: var(--ink-dim); font-style: normal; }
 
+.transcript .turn .seg-edit-btn {
+  width: 20px; height: 20px; margin-left: 8px; opacity: 0;
+  vertical-align: middle; transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+
+.transcript .turn:hover .seg-edit-btn { opacity: 0.55; }
+
+.transcript .turn .seg-edit-btn:hover { opacity: 1; }
+
+.seg-edit {
+  font-family: var(--serif); font-size: 17px; line-height: 1.7;
+  color: var(--ink); background: var(--bg);
+  border: 0.5px solid var(--accent-line); border-radius: 6px;
+  padding: 4px 8px; outline: none; resize: vertical;
+  width: 100%; box-sizing: border-box;
+}
+
+.seg-edit:focus { border-color: var(--accent); }
+
 .transcript.view-inline .turn {
   grid-template-columns: 1fr; gap: 2px;
 }

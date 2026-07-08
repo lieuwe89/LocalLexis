@@ -32,6 +32,14 @@ const doc: TranscriptDoc = {
   created_at: '2026-05-15T10:00:00Z',
 };
 
+const segDoc: TranscriptDoc = {
+  ...doc,
+  segments: [
+    { start: 0, end: 5, speaker: 'SPEAKER_00', text: 'hello' },
+    { start: 5, end: 10, speaker: 'SPEAKER_01', text: 'world' },
+  ],
+};
+
 test('renders all segments with speaker labels', () => {
   render(<CompleteScreen doc={doc} onRelabel={async () => {}} />);
   expect(screen.getByText('hi')).toBeInTheDocument();
@@ -87,4 +95,40 @@ test('delete button confirms then calls onDelete', async () => {
   expect(onDelete).toHaveBeenCalled();
 
   confirmSpy.mockRestore();
+});
+
+test('editing a segment line calls onEditSegment with index and new text', async () => {
+  const onEditSegment = vi.fn().mockResolvedValue(undefined);
+  render(<CompleteScreen doc={segDoc} onRelabel={async () => {}} onEditSegment={onEditSegment} />);
+
+  fireEvent.click(screen.getByLabelText('Edit line 2'));
+  const textarea = screen.getByDisplayValue('world') as HTMLTextAreaElement;
+  fireEvent.change(textarea, { target: { value: 'corrected text' } });
+  fireEvent.keyDown(textarea, { key: 'Enter' });
+
+  await new Promise(r => setTimeout(r, 0));
+
+  expect(onEditSegment).toHaveBeenCalledWith(1, 'corrected text');
+});
+
+test('escape cancels segment edit without calling onEditSegment', async () => {
+  const onEditSegment = vi.fn().mockResolvedValue(undefined);
+  render(<CompleteScreen doc={segDoc} onRelabel={async () => {}} onEditSegment={onEditSegment} />);
+
+  fireEvent.click(screen.getByLabelText('Edit line 2'));
+  const textarea = screen.getByDisplayValue('world') as HTMLTextAreaElement;
+  fireEvent.change(textarea, { target: { value: 'corrected text' } });
+  fireEvent.keyDown(textarea, { key: 'Escape' });
+
+  await new Promise(r => setTimeout(r, 0));
+
+  expect(onEditSegment).not.toHaveBeenCalled();
+  expect(screen.getByText('world')).toBeInTheDocument();
+  expect(screen.queryByDisplayValue('corrected text')).toBeNull();
+});
+
+test('no edit buttons when onEditSegment is not provided', () => {
+  render(<CompleteScreen doc={segDoc} onRelabel={async () => {}} />);
+  expect(screen.queryByLabelText('Edit line 1')).toBeNull();
+  expect(screen.queryByLabelText('Edit line 2')).toBeNull();
 });
