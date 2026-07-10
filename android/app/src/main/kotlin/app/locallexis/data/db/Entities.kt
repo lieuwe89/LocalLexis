@@ -21,6 +21,10 @@ data class TranscriptEntity(
     val jsonMtime: Double,
     val modelsAsr: String?,
     val modelsDiarizer: String?,
+    val title: String? = null,
+    val summary: String? = null,
+    val summaryModel: String? = null,
+    val summaryCreatedAt: String? = null,
     val rawJson: String,
 )
 

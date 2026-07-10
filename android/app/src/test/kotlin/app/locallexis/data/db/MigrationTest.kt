@@ -33,6 +33,19 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun schemaV2IsExported() {
+        val schema = File(SCHEMA_DIR, "2.json")
+        assertTrue(
+            "v2 schema missing at ${schema.absolutePath} — bump @Database version and rebuild.",
+            schema.exists(),
+        )
+        val text = schema.readText()
+        for (column in listOf("title", "summary", "summaryModel", "summaryCreatedAt")) {
+            assertTrue("v2 schema missing column '$column'", text.contains("\"columnName\": \"$column\""))
+        }
+    }
+
     companion object {
         private val SCHEMA_DIR = File("schemas/app.locallexis.data.db.LocalLexisDatabase")
     }
