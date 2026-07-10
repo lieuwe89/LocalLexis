@@ -159,6 +159,39 @@ class SyncIngestTest {
         org.junit.Assert.assertNull(stored.summaryCreatedAt)
     }
 
+    @Test
+    fun reIngestClearsDroppedTitleAndSummary() = runTest {
+        ingest.applySnapshot(
+            SyncResponse(
+                workspaceId = "ws_a",
+                cursor = 100.0,
+                transcripts = listOf(
+                    makeWire("t1", segments = emptyList()).copy(
+                        title = "Renamed on web",
+                        summary = "# Recap\n- item",
+                        summaryMeta = WireSummaryMeta(
+                            model = "Qwen3-30B",
+                            createdAt = "2026-07-09T12:00:00Z",
+                        ),
+                    ),
+                ),
+            )
+        )
+        ingest.applySnapshot(
+            SyncResponse(
+                workspaceId = "ws_a",
+                cursor = 200.0,
+                transcripts = listOf(makeWire("t1", segments = emptyList())),
+            )
+        )
+
+        val stored = db.transcriptDao().getById("t1")!!
+        org.junit.Assert.assertNull(stored.title)
+        org.junit.Assert.assertNull(stored.summary)
+        org.junit.Assert.assertNull(stored.summaryModel)
+        org.junit.Assert.assertNull(stored.summaryCreatedAt)
+    }
+
     private fun makeWire(id: String, segments: List<WireSegment>) = WireTranscript(
         id = id,
         workspaceId = "ws_a",
