@@ -6,6 +6,10 @@ package app.locallexis.ui.format
  * numbered list items, **bold**, *italic*. Anything else passes through
  * as plain paragraph text. Deliberately not a spec-compliant parser;
  * see the design doc (2026-07-10-android-parity-design.md).
+ *
+ * Known tradeoffs: triple-asterisk emphasis (***text***) renders with
+ * stray literal asterisks (nested emphasis is unsupported), and leading
+ * indentation is trimmed so nested/indented list items flatten to top level.
  */
 sealed interface MdBlock {
     data class Heading(val level: Int, val spans: List<MdSpan>) : MdBlock

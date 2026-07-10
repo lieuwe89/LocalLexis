@@ -60,6 +60,12 @@ class MarkdownTest {
     }
 
     @Test
+    fun indentedBulletFlattensToTopLevel() {
+        val block = parseMarkdown("  - nested item").single()
+        assertEquals("nested item", (block as MdBlock.ListItem).spans.single().text)
+    }
+
+    @Test
     fun fourHashesIsPlainText() {
         val block = parseMarkdown("#### deep heading").single()
         assertEquals("#### deep heading", (block as MdBlock.Paragraph).spans.single().text)
