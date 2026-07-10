@@ -53,6 +53,10 @@ class SyncIngest(private val db: LocalLexisDatabase) {
                 jsonMtime = cursor,
                 modelsAsr = doc.models.asr,
                 modelsDiarizer = doc.models.diarizer,
+                title = doc.title,
+                summary = doc.summary,
+                summaryModel = doc.summaryMeta?.model,
+                summaryCreatedAt = doc.summaryMeta?.createdAt,
                 rawJson = doc.rawJson,
             )
         )

@@ -116,6 +116,49 @@ class SyncIngestTest {
         assertEquals(500.0, db.syncStateDao().getCursor("ws_a")!!, 1e-6)
     }
 
+    @Test
+    fun ingestMapsTitleAndSummaryColumns() = runTest {
+        ingest.applySnapshot(
+            SyncResponse(
+                workspaceId = "ws_a",
+                cursor = 300.0,
+                transcripts = listOf(
+                    makeWire("t1", segments = emptyList()).copy(
+                        title = "Renamed on web",
+                        summary = "# Recap\n- item",
+                        summaryMeta = WireSummaryMeta(
+                            model = "Qwen3-30B",
+                            createdAt = "2026-07-09T12:00:00Z",
+                        ),
+                    ),
+                ),
+            )
+        )
+
+        val stored = db.transcriptDao().getById("t1")!!
+        assertEquals("Renamed on web", stored.title)
+        assertEquals("# Recap\n- item", stored.summary)
+        assertEquals("Qwen3-30B", stored.summaryModel)
+        assertEquals("2026-07-09T12:00:00Z", stored.summaryCreatedAt)
+    }
+
+    @Test
+    fun ingestWithoutNewFieldsStoresNulls() = runTest {
+        ingest.applySnapshot(
+            SyncResponse(
+                workspaceId = "ws_a",
+                cursor = 400.0,
+                transcripts = listOf(makeWire("t2", segments = emptyList())),
+            )
+        )
+
+        val stored = db.transcriptDao().getById("t2")!!
+        org.junit.Assert.assertNull(stored.title)
+        org.junit.Assert.assertNull(stored.summary)
+        org.junit.Assert.assertNull(stored.summaryModel)
+        org.junit.Assert.assertNull(stored.summaryCreatedAt)
+    }
+
     private fun makeWire(id: String, segments: List<WireSegment>) = WireTranscript(
         id = id,
         workspaceId = "ws_a",
