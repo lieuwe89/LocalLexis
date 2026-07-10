@@ -9,6 +9,7 @@ import app.locallexis.data.sync.SyncException
 import app.locallexis.data.sync.SyncResponse
 import app.locallexis.ui.library.LibraryUiState
 import app.locallexis.ui.library.LibraryViewModel
+import app.locallexis.ui.library.TranscriptSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -138,6 +139,13 @@ class LibraryViewModelTest {
         advanceUntilIdle()
         assertEquals(null, vm.lastError.value)
         assertEquals(2, sync.incrementalCalls)
+    }
+
+    @Test
+    fun projectionCarriesTitle() {
+        val entity = transcript("t1", "stem", "2026-07-01T10:00:00Z").copy(title = "Renamed")
+        val summary = TranscriptSummary.fromEntity(entity)
+        assertEquals("Renamed", summary.title)
     }
 
     private fun transcript(id: String, basename: String, createdAt: String) = TranscriptEntity(

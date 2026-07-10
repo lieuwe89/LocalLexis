@@ -23,6 +23,7 @@ sealed interface LibraryUiState {
 
 data class TranscriptSummary(
     val id: String,
+    val title: String?,
     val audioBasename: String?,
     val language: String?,
     val createdAt: String?,
@@ -31,6 +32,7 @@ data class TranscriptSummary(
     companion object {
         fun fromEntity(e: TranscriptEntity) = TranscriptSummary(
             id = e.id,
+            title = e.title,
             audioBasename = e.audioBasename,
             language = e.language,
             createdAt = e.createdAt,
