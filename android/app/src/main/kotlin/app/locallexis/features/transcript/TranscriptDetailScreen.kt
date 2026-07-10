@@ -25,7 +25,8 @@ import app.locallexis.data.db.TranscriptEntity
 import app.locallexis.design.LocalLexisTheme
 import app.locallexis.ui.components.CenteredProgress
 import app.locallexis.ui.components.CenteredText
-import app.locallexis.ui.format.formatDate
+import app.locallexis.ui.format.displayTitle
+import app.locallexis.ui.format.formatDateTime
 import app.locallexis.ui.format.formatDuration
 import app.locallexis.ui.format.speakerHue
 import app.locallexis.ui.library.SegmentRow
@@ -60,6 +61,17 @@ private fun ReadyDetail(transcript: TranscriptEntity, segments: List<SegmentRow>
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
         ) {
+            val summary = transcript.summary
+            if (!summary.isNullOrBlank()) {
+                item(key = "summary") {
+                    SummaryCard(
+                        summary = summary,
+                        model = transcript.summaryModel,
+                        createdAt = transcript.summaryCreatedAt,
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
+                }
+            }
             items(segments, key = { it.index }) { seg ->
                 SegmentBubble(seg)
             }
@@ -71,11 +83,11 @@ private fun ReadyDetail(transcript: TranscriptEntity, segments: List<SegmentRow>
 private fun DetailHeader(transcript: TranscriptEntity, speakerCount: Int) {
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
         Text(
-            text = transcript.audioBasename ?: transcript.id,
+            text = displayTitle(transcript.title, transcript.audioBasename, transcript.id),
             style = MaterialTheme.typography.headlineSmall,
         )
         val meta = listOfNotNull(
-            formatDate(transcript.createdAt).ifBlank { null },
+            formatDateTime(transcript.createdAt).ifBlank { null },
             formatDuration(transcript.durationSeconds).ifBlank { null },
             transcript.language,
             if (speakerCount > 0) "$speakerCount speakers" else null,
@@ -130,6 +142,10 @@ private val previewTranscript = TranscriptEntity(
     jsonMtime = 0.0,
     modelsAsr = null,
     modelsDiarizer = null,
+    title = "Parks budget hearing",
+    summary = "# Recap\nCouncil **tabled** the parks budget pending the survey.",
+    summaryModel = "Qwen3-30B",
+    summaryCreatedAt = "2026-07-09T12:00:00Z",
     rawJson = "{}",
 )
 
