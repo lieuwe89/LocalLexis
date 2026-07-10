@@ -34,6 +34,9 @@ data class WireTranscript(
     val models: WireModels = WireModels(),
     val speakers: Map<String, String> = emptyMap(),
     val segments: List<WireSegment> = emptyList(),
+    val title: String? = null,
+    val summary: String? = null,
+    @SerialName("summary_meta") val summaryMeta: WireSummaryMeta? = null,
     /**
      * Raw JSON for the transcript doc. Filled in by [SyncClient] before
      * handing off to the ingest layer so the local Room row can keep a
@@ -47,6 +50,13 @@ data class WireTranscript(
 data class WireModels(
     val asr: String? = null,
     val diarizer: String? = null,
+)
+
+/** Subset of the hub's summary_meta we display; `provider` is unused on mobile. */
+@Serializable
+data class WireSummaryMeta(
+    val model: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
 )
 
 @Serializable
