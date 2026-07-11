@@ -53,13 +53,19 @@ class SyncIngest(private val db: LocalLexisDatabase) {
                 jsonMtime = cursor,
                 modelsAsr = doc.models.asr,
                 modelsDiarizer = doc.models.diarizer,
+                title = doc.title,
+                summary = doc.summary,
+                summaryModel = doc.summaryMeta?.model,
+                summaryCreatedAt = doc.summaryMeta?.createdAt,
                 rawJson = doc.rawJson,
             )
         )
 
         // Replace strategy on segments/speakers — full doc reload is the
-        // semantics of /sync/snapshot. Incremental relabel ops will be
-        // handled by the CRDT layer in a future block, not here.
+        // semantics of /sync/snapshot; the transcript row itself (including
+        // title/summary columns) is likewise replaced wholesale by the
+        // REPLACE upsert above. Incremental relabel ops will be handled by
+        // the CRDT layer in a future block, not here.
         db.segmentDao().deleteForTranscript(doc.id)
         db.segmentDao().upsertAll(
             doc.segments.mapIndexed { idx, seg ->

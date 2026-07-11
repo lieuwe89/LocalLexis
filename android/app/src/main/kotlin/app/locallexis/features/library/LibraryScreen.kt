@@ -40,7 +40,8 @@ import app.locallexis.ui.components.CenteredMessage
 import app.locallexis.ui.components.CenteredProgress
 import app.locallexis.ui.components.CenteredText
 import app.locallexis.ui.components.ErrorBanner
-import app.locallexis.ui.format.formatDate
+import app.locallexis.ui.format.displayTitle
+import app.locallexis.ui.format.formatDateTime
 import app.locallexis.ui.format.formatDuration
 import app.locallexis.ui.library.LibraryUiState
 import app.locallexis.ui.library.LibraryViewModelHolder
@@ -137,7 +138,7 @@ private fun rememberTitleResolver(state: LibraryUiState): (String) -> String {
     val titles = remember(state) {
         (state as? LibraryUiState.Ready)
             ?.transcripts
-            ?.associate { it.id to (it.audioBasename ?: it.id) }
+            ?.associate { it.id to displayTitle(it.title, it.audioBasename, it.id) }
             .orEmpty()
     }
     return { id -> titles[id] ?: id }
@@ -202,13 +203,13 @@ private fun TranscriptRow(item: TranscriptSummary, onOpen: (String) -> Unit) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                text = item.audioBasename ?: item.id,
+                text = displayTitle(item.title, item.audioBasename, item.id),
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             val meta = listOfNotNull(
-                formatDate(item.createdAt).ifBlank { null },
+                formatDateTime(item.createdAt).ifBlank { null },
                 item.language,
             ).joinToString(" · ")
             if (meta.isNotBlank()) {
@@ -248,9 +249,9 @@ private fun EmptyLibrary() {
 }
 
 private val previewItems = listOf(
-    TranscriptSummary("1", "council-2026-05-12", "en", "2026-05-12T14:32:00Z", 872.0),
-    TranscriptSummary("2", "deposition-ramirez", "es", "2026-05-10T09:00:00Z", 3737.0),
-    TranscriptSummary("3", "standup-0508", "en", "2026-05-08T08:45:00Z", 525.0),
+    TranscriptSummary("1", "Parks budget hearing", "council-2026-05-12", "en", "2026-05-12T14:32:00Z", 872.0),
+    TranscriptSummary("2", null, "deposition-ramirez", "es", "2026-05-10T09:00:00Z", 3737.0),
+    TranscriptSummary("3", null, "standup-0508", "en", "2026-05-08T08:45:00Z", 525.0),
 )
 
 @Preview(showBackground = true)

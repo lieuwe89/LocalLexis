@@ -45,7 +45,13 @@ android {
 
     sourceSets["main"].kotlin.srcDir("src/main/kotlin")
     sourceSets["test"].kotlin.srcDir("src/test/kotlin")
-    sourceSets["test"].assets.srcDir("$projectDir/schemas")
+    // Robolectric's shadow AssetManager for local unit tests reads assets from
+    // the *tested variant's* merged assets output (android_merged_assets =
+    // build/intermediates/assets/debug/mergeDebugAssets in test_config.properties),
+    // not from the "test" AndroidSourceSet — so exported Room schemas must be
+    // wired into the "debug" build type's assets, not "test", for
+    // MigrationTestHelper to find them under Robolectric.
+    sourceSets["debug"].assets.srcDir("$projectDir/schemas")
 
     testOptions {
         unitTests {

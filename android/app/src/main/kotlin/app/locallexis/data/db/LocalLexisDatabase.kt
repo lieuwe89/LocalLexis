@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -14,7 +16,7 @@ import androidx.room.RoomDatabase
         DeviceEntity::class,
         SyncStateEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class LocalLexisDatabase : RoomDatabase() {
@@ -29,6 +31,15 @@ abstract class LocalLexisDatabase : RoomDatabase() {
         @Volatile
         private var instance: LocalLexisDatabase? = null
 
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transcripts ADD COLUMN title TEXT")
+                db.execSQL("ALTER TABLE transcripts ADD COLUMN summary TEXT")
+                db.execSQL("ALTER TABLE transcripts ADD COLUMN summaryModel TEXT")
+                db.execSQL("ALTER TABLE transcripts ADD COLUMN summaryCreatedAt TEXT")
+            }
+        }
+
         fun get(context: Context): LocalLexisDatabase =
             instance ?: synchronized(this) {
                 instance ?: build(context).also { instance = it }
@@ -39,6 +50,6 @@ abstract class LocalLexisDatabase : RoomDatabase() {
                 context.applicationContext,
                 LocalLexisDatabase::class.java,
                 "locallexis.db",
-            ).build()
+            ).addMigrations(MIGRATION_1_2).build()
     }
 }
