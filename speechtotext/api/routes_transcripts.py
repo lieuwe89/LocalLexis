@@ -121,6 +121,8 @@ def list_transcripts(
     request: Request,
     q: str | None = Query(default=None, description="full-text search query"),
     limit: int = Query(default=200, ge=1, le=1000),
+    fuzzy: bool = Query(default=False, description="also match phonetically"),
+    sort: str = Query(default="relevance", pattern="^(relevance|date)$"),
 ) -> list[dict]:
     db = request.app.state.library_db
     # Reconcile before responding so the user sees rows matching disk. The
@@ -130,7 +132,7 @@ def list_transcripts(
     # _on_complete_dir can't grow it mid-iteration inside reconcile.
     request.app.state.library_reconciler.reconcile(set(request.app.state.library_dirs))
     if q:
-        return db.search(q, limit=limit)
+        return db.search(q, limit=limit, fuzzy=fuzzy, sort=sort)
     return db.list(limit=limit)
 
 

@@ -544,3 +544,45 @@ class TestPatchTranscriptOpAuth:
         )
         after = app_with_lib.state.device_registry.get(dev_id)
         assert after["last_seen"] is not None
+
+
+# ── search route params: fuzzy, sort (block 4) ──────────────────────────────
+
+
+def test_search_returns_segment_hits(app_with_lib):
+    client = TestClient(app_with_lib)
+    r = client.get("/transcripts", params={"q": "hi"})
+    assert r.status_code == 200
+    items = r.json()
+    assert len(items) == 1
+    assert items[0]["hits"][0]["segment_index"] == 0
+    assert items[0]["total_hits"] == 1
+
+
+def test_search_fuzzy_param(app_with_lib, tmp_path):
+    # Add a transcript containing "Kaitlyn"; query the phonetic twin "Catelin".
+    sample = {
+        "version": 1,
+        "audio_path": str(tmp_path / "kaitlyn.mp3"),
+        "duration_seconds": 5.0,
+        "language": "en",
+        "speakers": {"SPEAKER_00": "Alice"},
+        "segments": [{"start": 0.0, "end": 2.0, "speaker": "SPEAKER_00",
+                      "text": "then Kaitlyn presented"}],
+        "models": {"asr": "faster-whisper:tiny"},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    (tmp_path / "kaitlyn.json").write_text(json.dumps(sample))
+    client = TestClient(app_with_lib)
+    exact = client.get("/transcripts", params={"q": "Catelin"}).json()
+    assert exact == [] or not any(i.get("hits") for i in exact)
+    fuzzy = client.get("/transcripts", params={"q": "Catelin", "fuzzy": 1}).json()
+    assert len(fuzzy) == 1
+    assert fuzzy[0]["id"] == "kaitlyn"
+    assert fuzzy[0]["hits"][0]["segment_index"] == 0
+
+
+def test_search_sort_param_validation(app_with_lib):
+    client = TestClient(app_with_lib)
+    assert client.get("/transcripts", params={"q": "hi", "sort": "date"}).status_code == 200
+    assert client.get("/transcripts", params={"q": "hi", "sort": "bogus"}).status_code == 422
