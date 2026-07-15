@@ -101,21 +101,48 @@ def test_delete_removes_segment_rows(db: LibraryDB, tmp_path: Path):
     assert _seg_rows(db, "segments_phonetic", "a") == []
 
 
-def test_version_mismatch_drops_and_rebuilds(tmp_path: Path):
+def test_version_mismatch_reindexes_previously_known_files(tmp_path: Path):
+    """A schema rebuild must not lose transcripts outside the startup dirs.
+
+    Runtime-registered dirs (audio parents via _on_complete_dir) are not
+    persisted anywhere; the DB rows were the only memory of those files.
+    The migration must therefore carry the known json_paths across the
+    drop-and-rebuild and re-index every file that still exists.
+    (Regression: v0.15.0 dropped a user's ~/Music transcripts from view.)
+    """
     db_path = tmp_path / "library.db"
     db = LibraryDB(db_path)
-    p = _write(tmp_path, "a", _make_doc([(0.0, 1.0, "SPEAKER_00", "hello")]))
+    outside = tmp_path / "outside-dir"
+    outside.mkdir()
+    p = _write(outside, "old", _make_doc([(0.0, 1.0, "SPEAKER_00", "hello world")]))
     db.upsert_path(p)
     # Simulate an old-schema DB by forging a stale version number.
     db._conn.execute("UPDATE schema_version SET version=?", (SCHEMA_VERSION - 1,))
     db._conn.commit()
     db.close()
 
-    db2 = LibraryDB(db_path)  # must not raise; must start empty
-    assert db2.list() == []
+    db2 = LibraryDB(db_path)  # must not raise
     row = db2._conn.execute("SELECT version FROM schema_version").fetchone()
     assert row[0] == SCHEMA_VERSION
-    # And reindexing works on the fresh schema.
-    db2.upsert_path(p)
-    assert len(db2.list()) == 1
+    # The previously indexed file survived the rebuild...
+    assert [r["id"] for r in db2.list()] == ["old"]
+    # ...including its new segment tables.
+    assert _seg_rows(db2, "segments_fts", "old") != []
+    items = db2.search("hello")
+    assert items and items[0]["hits"][0]["segment_index"] == 0
+    db2.close()
+
+
+def test_version_mismatch_drops_rows_for_deleted_files(tmp_path: Path):
+    db_path = tmp_path / "library.db"
+    db = LibraryDB(db_path)
+    p = _write(tmp_path, "gone", _make_doc([(0.0, 1.0, "SPEAKER_00", "hello")]))
+    db.upsert_path(p)
+    db._conn.execute("UPDATE schema_version SET version=?", (SCHEMA_VERSION - 1,))
+    db._conn.commit()
+    db.close()
+    p.unlink()  # file no longer on disk → row must not be resurrected
+
+    db2 = LibraryDB(db_path)
+    assert db2.list() == []
     db2.close()

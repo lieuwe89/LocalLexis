@@ -302,6 +302,7 @@ class LibraryDB:
     # ── schema ─────────────────────────────────────────────────────────────
 
     def _migrate(self) -> None:
+        known_paths: list[str] = []
         with self._lock, self._conn:
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS schema_version "
@@ -312,8 +313,23 @@ class LibraryDB:
             ).fetchone()
             if row is not None and row[0] != SCHEMA_VERSION:
                 # The DB is a throwaway index over the JSON sidecars: on any
-                # version mismatch, drop everything and let the next
-                # reconcile rebuild from disk.
+                # version mismatch, drop everything and rebuild.
+                #
+                # BUT the rows are not fully derivable from the startup dirs:
+                # runtime-registered dirs (audio parents via _on_complete_dir)
+                # are persisted nowhere else, so the old rows are the only
+                # memory of those files. Carry the known json_paths across
+                # the rebuild and re-index every file that still exists —
+                # otherwise transcripts outside the startup dirs silently
+                # vanish from the library (v0.15.0 regression).
+                try:
+                    known_paths = [
+                        r[0] for r in self._conn.execute(
+                            "SELECT json_path FROM transcripts"
+                        )
+                    ]
+                except sqlite3.OperationalError:
+                    pass  # ancient/corrupt DB without a transcripts table
                 #
                 # NOTE: sqlite3 auto-commits before DDL statements, so this
                 # `with self._conn` block is NOT atomic across the drops and
@@ -358,6 +374,13 @@ class LibraryDB:
                 self._conn.execute("ALTER TABLE transcripts ADD COLUMN title TEXT")
             except sqlite3.OperationalError:
                 pass  # column already exists
+        # After a drop-and-rebuild, restore the index for every file the old
+        # schema knew about (upsert_path takes its own lock per file; files
+        # deleted since are simply skipped and thus dropped from the index).
+        for p in known_paths:
+            path = Path(p)
+            if path.exists():
+                self.upsert_path(path)
 
     # ── indexing ──────────────────────────────────────────────────────────
 
