@@ -33,11 +33,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from speechtotext.api.phonetics import encode_text
+from speechtotext.api.phonetics import WORD_RE, encode_text, encode_token
 
 _log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 2
+
+# Phonetic-only hits always rank below every exact hit; bm25 values are
+# small negatives, so a large positive offset guarantees the ordering.
+_PHONETIC_RANK_OFFSET = 1000.0
+_HITS_PER_TRANSCRIPT = 5
 
 # Private-use Unicode sentinels for FTS5 snippet() match markers. We split on
 # these in Python and return plain-text parts so the frontend never receives
@@ -214,6 +219,42 @@ def _parse_snippet(raw: str) -> list[dict]:
             parts.append({"text": match_text, "match": True})
         if trailing:
             parts.append({"text": trailing, "match": False})
+    return parts
+
+
+def _phonetic_snippet(text: str, query_codes: set[str],
+                      context: int = 6, max_tokens: int = 24) -> list[dict]:
+    """Build [{text, match}] parts for a phonetic hit.
+
+    FTS5's snippet() can only mark matches in the indexed column — which for
+    segments_phonetic holds codes, not words. So we re-encode the original
+    text token by token (positions align 1:1 with the codes column by
+    construction) and mark tokens whose code is in the query, windowing
+    around the first match like snippet() does.
+    """
+    tokens = [(m.start(), m.end()) for m in WORD_RE.finditer(text)]
+    flags = [encode_token(text[a:b]) in query_codes for a, b in tokens]
+    if not any(flags):
+        return [{"text": text[:200], "match": False}]
+    first = flags.index(True)
+    lo = max(0, first - context)
+    hi = min(len(tokens), lo + max_tokens)
+    parts: list[dict] = []
+
+    def emit(t: str, match: bool) -> None:
+        if t:
+            parts.append({"text": t, "match": match})
+
+    if lo > 0:
+        emit("…", False)
+    cursor = tokens[lo][0]
+    for i in range(lo, hi):
+        a, b = tokens[i]
+        emit(text[cursor:a], False)
+        emit(text[a:b], flags[i])
+        cursor = b
+    if hi < len(tokens):
+        emit("…", False)
     return parts
 
 
@@ -564,12 +605,71 @@ class LibraryDB:
             ).fetchall()
         return [self._row_to_item(r) for r in rows]
 
-    def search(self, query: str, limit: int = 50) -> list[dict]:
+    def search(self, query: str, limit: int = 50, *,
+               fuzzy: bool = False, sort: str = "relevance") -> list[dict]:
         match = _quote_fts(query)
         if not match:
             return self.list(limit=limit)
+
+        # 1) Exact per-segment hits.
+        hits: dict[str, dict[int, dict]] = {}
         with self._lock:
-            rows = self._conn.execute(
+            seg_rows = self._conn.execute(
+                """
+                SELECT transcript_id, segment_index, start,
+                       snippet(segments_fts, 0, ?, ?, '…', 24) AS snip,
+                       bm25(segments_fts) AS rank
+                FROM segments_fts
+                WHERE segments_fts MATCH ?
+                ORDER BY rank ASC
+                LIMIT ?
+                """,
+                (_SNIPPET_START, _SNIPPET_END, match, limit * 20),
+            ).fetchall()
+        for r in seg_rows:
+            hits.setdefault(r["transcript_id"], {})[r["segment_index"]] = {
+                "segment_index": r["segment_index"],
+                "start": r["start"],
+                "snippet_parts": _parse_snippet(r["snip"]),
+                "score": r["rank"],
+            }
+
+        # 2) Phonetic per-segment hits (fuzzy mode only). Exact hits on the
+        # same segment win; phonetic-only hits rank after all exact hits.
+        if fuzzy:
+            codes = [encode_token(t) for t in query.split() if t.strip()]
+            if codes:
+                pmatch = " ".join(
+                    '"{}"'.format(c.replace('"', '""')) for c in codes
+                )
+                with self._lock:
+                    ph_rows = self._conn.execute(
+                        """
+                        SELECT transcript_id, segment_index, start, text,
+                               bm25(segments_phonetic) AS rank
+                        FROM segments_phonetic
+                        WHERE segments_phonetic MATCH ?
+                        ORDER BY rank ASC
+                        LIMIT ?
+                        """,
+                        (pmatch, limit * 20),
+                    ).fetchall()
+                code_set = set(codes)
+                for r in ph_rows:
+                    tid_hits = hits.setdefault(r["transcript_id"], {})
+                    if r["segment_index"] in tid_hits:
+                        continue
+                    tid_hits[r["segment_index"]] = {
+                        "segment_index": r["segment_index"],
+                        "start": r["start"],
+                        "snippet_parts": _phonetic_snippet(r["text"], code_set),
+                        "score": r["rank"] + _PHONETIC_RANK_OFFSET,
+                    }
+
+        # 3) Transcript-level matches (filename, speakers, meta + joined
+        # content) — keeps title/speaker-only matches in the results.
+        with self._lock:
+            t_rows = self._conn.execute(
                 """
                 SELECT t.id, t.json_path, t.audio_path, t.title, t.duration_seconds,
                        t.language, t.speakers_count, t.created_at,
@@ -584,12 +684,50 @@ class LibraryDB:
                 """,
                 (_SNIPPET_START, _SNIPPET_END, match, limit),
             ).fetchall()
-        items = []
-        for r in rows:
+        items_by_id: dict[str, dict] = {}
+        rank_by_id: dict[str, float] = {}
+        for r in t_rows:
             item = self._row_to_item(r)
             item["snippet_parts"] = _parse_snippet(r["snippet"])
-            items.append(item)
-        return items
+            items_by_id[r["id"]] = item
+            rank_by_id[r["id"]] = r["rank"]
+
+        # 4) Transcripts reached only via segment hits (e.g. phonetic-only).
+        missing = [tid for tid in hits if tid not in items_by_id]
+        if missing:
+            qmarks = ",".join("?" for _ in missing)
+            with self._lock:
+                rows = self._conn.execute(
+                    f"""
+                    SELECT id, json_path, audio_path, title, duration_seconds,
+                           language, speakers_count, created_at,
+                           models_asr, models_diarizer, error, origin
+                    FROM transcripts WHERE id IN ({qmarks})
+                    """,
+                    missing,
+                ).fetchall()
+            for r in rows:
+                items_by_id[r["id"]] = self._row_to_item(r)
+
+        # 5) Attach hits; the best segment drives the transcript's rank and
+        # its top-level snippet (back-compat for clients that ignore hits).
+        for tid, seg_hits in hits.items():
+            item = items_by_id.get(tid)
+            if item is None:
+                continue  # row vanished between queries
+            ordered = sorted(seg_hits.values(), key=lambda h: h["score"])
+            item["hits"] = ordered[:_HITS_PER_TRANSCRIPT]
+            item["total_hits"] = len(ordered)
+            item["snippet_parts"] = ordered[0]["snippet_parts"]
+            best = ordered[0]["score"]
+            rank_by_id[tid] = min(rank_by_id.get(tid, best), best)
+
+        items = list(items_by_id.values())
+        if sort == "date":
+            items.sort(key=lambda i: i.get("created_at") or "", reverse=True)
+        else:
+            items.sort(key=lambda i: rank_by_id.get(i["id"], 0.0))
+        return items[:limit]
 
     def get_path(self, transcript_id: str) -> Path | None:
         with self._lock:
