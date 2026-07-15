@@ -149,6 +149,16 @@ _DDL = [
         version  INTEGER NOT NULL DEFAULT 1
     )
     """,
+    # Library dirs registered at runtime (audio parents on job completion,
+    # hub synced dir). Unlike every other table this is NOT a derived index —
+    # it is the source of record for which dirs the library watches, so it
+    # must never be dropped by a schema rebuild (see _migrate's drop list).
+    """
+    CREATE TABLE IF NOT EXISTS library_dirs (
+        path          TEXT PRIMARY KEY,
+        registered_at TEXT NOT NULL
+    )
+    """,
 ]
 
 
@@ -338,6 +348,9 @@ class LibraryDB:
                 # with the version row written last, so a re-run converges.
                 # Future non-idempotent migrations must not reuse this
                 # pattern blindly.
+                #
+                # library_dirs is deliberately absent from this drop list:
+                # it is persistent state, not a rebuildable index.
                 for tbl in (
                     "transcripts_fts", "segments_fts", "segments_phonetic",
                     "embeddings", "chunks", "transcripts", "schema_version",
@@ -611,6 +624,43 @@ class LibraryDB:
                 self.delete_by_path(Path(r["json_path"]))
                 deleted += 1
         return {"scanned": scanned, "upserted": upserted, "deleted": deleted}
+
+    # ── registered dirs ───────────────────────────────────────────────────
+
+    def register_dir(self, dir_path: Path) -> None:
+        """Persist a library dir so it survives restarts and DB rebuilds.
+
+        Paths are stored resolved so the same dir reached via different
+        spellings (symlink, trailing component, relative) dedupes to one row.
+        """
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO library_dirs (path, registered_at) "
+                "VALUES (?, ?)",
+                (str(Path(dir_path).resolve()), _now_iso()),
+            )
+
+    def known_dirs(self, *, prune: bool = True) -> list[Path]:
+        """Return previously registered dirs that still exist on disk.
+
+        With prune=True (the default, used at startup) rows whose directory
+        is gone are deleted — a renamed or removed dir should not be
+        rescanned forever.
+        """
+        dirs: list[Path] = []
+        with self._lock, self._conn:
+            rows = self._conn.execute(
+                "SELECT path FROM library_dirs ORDER BY path"
+            ).fetchall()
+            for r in rows:
+                p = Path(r["path"])
+                if p.is_dir():
+                    dirs.append(p)
+                elif prune:
+                    self._conn.execute(
+                        "DELETE FROM library_dirs WHERE path=?", (r["path"],)
+                    )
+        return dirs
 
     # ── queries ───────────────────────────────────────────────────────────
 

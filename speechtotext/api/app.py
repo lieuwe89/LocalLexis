@@ -219,8 +219,17 @@ def create_app(
     # reports an empty trash even though deleted uploads are on disk.
     app.state.library_dirs.add(app.state.incoming_dir)
 
+    # Restore dirs registered in previous sessions (_on_complete_dir /
+    # _on_synced persist them below). Without this, only the startup set
+    # survives a restart and transcripts elsewhere drop out of the library
+    # whenever the DB index is rebuilt. known_dirs() prunes rows whose
+    # directory no longer exists.
+    for _known_dir in app.state.library_db.known_dirs():
+        app.state.library_dirs.add(_known_dir)
+
     def _on_complete_dir(dir_path: Path) -> None:
         app.state.library_dirs.add(dir_path)
+        app.state.library_db.register_dir(dir_path)
         # Re-sync just this directory so the new transcript is searchable
         # the moment the job finishes. Cheap because mtime checks short-
         # circuit unchanged rows.
@@ -275,6 +284,7 @@ def create_app(
         # library dir on each sync tick.
         d = synced_dir()
         app.state.library_dirs.add(d)
+        app.state.library_db.register_dir(d)
         app.state.library_db.sync_dirs([d])
 
     app.state.hub_runtime = HubRuntime(
