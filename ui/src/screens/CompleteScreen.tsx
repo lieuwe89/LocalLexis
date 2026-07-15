@@ -29,16 +29,13 @@ function fmtTimestamp(secs: number) {
 
 function renderWithMarks(
   text: string,
-  segIndex: number,
-  matches: FindMatch[],
+  group: { m: FindMatch; i: number }[] | undefined,
   currentIdx: number,
 ): ReactNode {
+  if (!group?.length) return text;
   const parts: ReactNode[] = [];
   let pos = 0;
-  let any = false;
-  matches.forEach((m, i) => {
-    if (m.segmentIndex !== segIndex) return;
-    any = true;
+  for (const { m, i } of group) {
     if (m.start > pos) parts.push(text.slice(pos, m.start));
     parts.push(
       <mark key={i} className={i === currentIdx ? 'current' : undefined}>
@@ -46,8 +43,7 @@ function renderWithMarks(
       </mark>,
     );
     pos = m.end;
-  });
-  if (!any) return text;
+  }
   parts.push(text.slice(pos));
   return parts;
 }
@@ -132,6 +128,19 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
 
   const currentIdx = matches.length ? findIdx % matches.length : -1;
   const currentMatchSeg = currentIdx >= 0 ? matches[currentIdx].segmentIndex : null;
+
+  // Matches are ordered by segmentIndex, so group them once per query instead
+  // of scanning the full list for every segment on every render. The global
+  // index `i` is kept — it drives the `current` mark class.
+  const matchesBySegment = useMemo(() => {
+    const bySeg = new Map<number, { m: FindMatch; i: number }[]>();
+    matches.forEach((m, i) => {
+      const group = bySeg.get(m.segmentIndex);
+      if (group) group.push({ m, i });
+      else bySeg.set(m.segmentIndex, [{ m, i }]);
+    });
+    return bySeg;
+  }, [matches]);
 
   const seekRef = useRef<((secs: number) => void) | null>(null);
 
@@ -323,7 +332,7 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
         >~ fuzzy</button>
         {findQ.trim() && (
           <>
-            <span className="find-count">{matches.length ? `${(findIdx % matches.length) + 1} / ${matches.length}` : '0 / 0'}</span>
+            <span className="find-count">{currentIdx >= 0 ? `${currentIdx + 1} / ${matches.length}` : '0 / 0'}</span>
             <button className="icon-btn" aria-label="Previous match" onClick={() => step(-1)}>↑</button>
             <button className="icon-btn" aria-label="Next match" onClick={() => step(1)}>↓</button>
           </>
@@ -361,7 +370,7 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
                 />
               ) : (
                 <p>
-                  {renderWithMarks(seg.text, i, matches, currentIdx)}
+                  {renderWithMarks(seg.text, matchesBySegment.get(i), currentIdx)}
                   {onEditSegment && (
                     <button className="icon-btn seg-edit-btn" aria-label={`Edit line ${i + 1}`}
                             title="Edit line" onClick={() => setSegEdit({ i, draft: seg.text })}>
