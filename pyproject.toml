@@ -38,6 +38,7 @@ api = [
     "pynacl>=1.5",
     "cryptography>=42",
     "qrcode>=7.4",
+    "Metaphone>=0.6",
 ]
 packaging = [
     "pyinstaller>=6.0",

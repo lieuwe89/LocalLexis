@@ -6,3 +6,4 @@
 torch==2.11.0+cpu
 torchaudio==2.11.0+cpu
 torchcodec==0.14.0
+Metaphone>=0.6
