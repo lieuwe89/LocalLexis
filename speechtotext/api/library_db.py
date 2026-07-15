@@ -235,7 +235,8 @@ def _phonetic_snippet(text: str, query_codes: set[str],
     tokens = [(m.start(), m.end()) for m in WORD_RE.finditer(text)]
     flags = [encode_token(text[a:b]) in query_codes for a, b in tokens]
     if not any(flags):
-        return [{"text": text[:200], "match": False}]
+        snippet = text[:200]
+        return [{"text": snippet, "match": False}] if snippet else []
     first = flags.index(True)
     lo = max(0, first - context)
     hi = min(len(tokens), lo + max_tokens)
@@ -720,9 +721,19 @@ class LibraryDB:
             item["total_hits"] = len(ordered)
             item["snippet_parts"] = ordered[0]["snippet_parts"]
             best = ordered[0]["score"]
+            # The two bm25 scales differ by orders of magnitude (per-segment
+            # vs weighted transcript-level), so any transcript with a
+            # body-segment hit intentionally outranks metadata-only
+            # (title/speaker/filename) matches; the min() is a deliberate
+            # "body match wins" rule, not a calibrated blend.
             rank_by_id[tid] = min(rank_by_id.get(tid, best), best)
 
         items = list(items_by_id.values())
+        # Accepted limitation: date sort reorders the relevance-selected
+        # candidate pool (top-`limit` transcript matches ∪ transcripts from
+        # the top `limit*20` segment hits), so when total matches exceed
+        # `limit` a newer low-relevance match can be omitted. Accepted
+        # deliberately at personal-library scale (route default limit=200).
         if sort == "date":
             items.sort(key=lambda i: i.get("created_at") or "", reverse=True)
         else:

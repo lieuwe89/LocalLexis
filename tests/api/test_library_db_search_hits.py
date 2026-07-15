@@ -123,6 +123,10 @@ def test_phonetic_snippet_marks_matching_tokens():
     assert "spoke" in joined
 
 
+def test_phonetic_snippet_empty_text_returns_no_parts():
+    assert _phonetic_snippet("", {"KTLN"}) == []
+
+
 def test_phonetic_snippet_windows_long_text():
     filler = " ".join(f"word{i}" for i in range(40))
     text = f"{filler} Kaitlyn closes"
