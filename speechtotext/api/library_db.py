@@ -30,9 +30,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+from speechtotext.api.phonetics import encode_text
+
 _log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Private-use Unicode sentinels for FTS5 snippet() match markers. We split on
 # these in Python and return plain-text parts so the frontend never receives
@@ -92,6 +94,25 @@ _DDL = [
         speakers,
         meta,
         tokenize='porter unicode61 remove_diacritics 2'
+    )
+    """,
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS segments_fts USING fts5(
+        text,
+        transcript_id UNINDEXED,
+        segment_index UNINDEXED,
+        start UNINDEXED,
+        tokenize='porter unicode61 remove_diacritics 2'
+    )
+    """,
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS segments_phonetic USING fts5(
+        codes,
+        text UNINDEXED,
+        transcript_id UNINDEXED,
+        segment_index UNINDEXED,
+        start UNINDEXED,
+        tokenize='unicode61'
     )
     """,
     # Forward-compat tables for RAG. Empty for now; populating them is a
@@ -237,17 +258,34 @@ class LibraryDB:
 
     def _migrate(self) -> None:
         with self._lock, self._conn:
-            for stmt in _DDL:
-                self._conn.execute(stmt)
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_version "
+                "(version INTEGER NOT NULL PRIMARY KEY)"
+            )
             row = self._conn.execute(
                 "SELECT version FROM schema_version LIMIT 1"
             ).fetchone()
+            if row is not None and row[0] != SCHEMA_VERSION:
+                # The DB is a throwaway index over the JSON sidecars: on any
+                # version mismatch, drop everything and let the next
+                # reconcile rebuild from disk.
+                for tbl in (
+                    "transcripts_fts", "segments_fts", "segments_phonetic",
+                    "embeddings", "chunks", "transcripts", "schema_version",
+                ):
+                    self._conn.execute(f"DROP TABLE IF EXISTS {tbl}")
+                self._conn.execute(
+                    "CREATE TABLE IF NOT EXISTS schema_version "
+                    "(version INTEGER NOT NULL PRIMARY KEY)"
+                )
+                row = None
+            for stmt in _DDL:
+                self._conn.execute(stmt)
             if row is None:
                 self._conn.execute(
-                    "INSERT INTO schema_version (version) VALUES (?)",
+                    "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
                     (SCHEMA_VERSION,),
                 )
-            # Future migrations: bump SCHEMA_VERSION and branch on row[0].
         # Additive, idempotent column add — intentionally NOT gated on
         # SCHEMA_VERSION. New DBs already have `origin` from _DDL; old DBs
         # get it here and existing rows take the column default ('local').
@@ -360,6 +398,29 @@ class LibraryDB:
                 "VALUES (?, ?, ?, ?, ?)",
                 (rowid, content, fts_filename, speaker_labels, meta),
             )
+            self._conn.execute(
+                "DELETE FROM segments_fts WHERE transcript_id=?", (tid,)
+            )
+            self._conn.execute(
+                "DELETE FROM segments_phonetic WHERE transcript_id=?", (tid,)
+            )
+            for idx, seg in enumerate(doc.get("segments") or []):
+                text = str(seg.get("text") or "")
+                if not text.strip():
+                    continue
+                start = seg.get("start")
+                self._conn.execute(
+                    "INSERT INTO segments_fts "
+                    "(text, transcript_id, segment_index, start) "
+                    "VALUES (?, ?, ?, ?)",
+                    (text, tid, idx, start),
+                )
+                self._conn.execute(
+                    "INSERT INTO segments_phonetic "
+                    "(codes, text, transcript_id, segment_index, start) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (encode_text(text), text, tid, idx, start),
+                )
         return True
 
     def _upsert_error(self, json_path: Path, mtime: float, size: int, err: str) -> bool:
@@ -385,18 +446,30 @@ class LibraryDB:
             self._conn.execute(
                 "DELETE FROM transcripts_fts WHERE rowid=?", (rowid,)
             )
+            self._conn.execute(
+                "DELETE FROM segments_fts WHERE transcript_id=?", (tid,)
+            )
+            self._conn.execute(
+                "DELETE FROM segments_phonetic WHERE transcript_id=?", (tid,)
+            )
         return True
 
     def delete_by_path(self, json_path: Path) -> None:
         with self._lock, self._conn:
             row = self._conn.execute(
-                "SELECT rowid FROM transcripts WHERE json_path=?",
+                "SELECT rowid, id FROM transcripts WHERE json_path=?",
                 (str(json_path),),
             ).fetchone()
             if row is None:
                 return
             self._conn.execute(
                 "DELETE FROM transcripts_fts WHERE rowid=?", (row["rowid"],)
+            )
+            self._conn.execute(
+                "DELETE FROM segments_fts WHERE transcript_id=?", (row["id"],)
+            )
+            self._conn.execute(
+                "DELETE FROM segments_phonetic WHERE transcript_id=?", (row["id"],)
             )
             self._conn.execute(
                 "DELETE FROM transcripts WHERE rowid=?", (row["rowid"],)
