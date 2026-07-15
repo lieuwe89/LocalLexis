@@ -260,6 +260,7 @@ const inTranscriptFindDoc = {
 describe('in-transcript find', () => {
   beforeEach(() => {
     usePendingFind.setState({ pending: null });
+    (Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mockClear();
   });
 
   it('counts occurrences, not segments', async () => {
@@ -295,6 +296,18 @@ describe('in-transcript find', () => {
     const input = screen.getByLabelText('Search in transcript') as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe('Kaitlyn'));
     expect(await screen.findByText('1 / 1')).toBeInTheDocument();
+    expect(usePendingFind.getState().pending).toBeNull();
+  });
+
+  it('pendingFind with no client match still scrolls to the clicked segment', async () => {
+    // Server search (porter stemming / phonetic codes) can match where the
+    // client engine does not — the segment jump must still happen.
+    usePendingFind.getState().set({ tid: 'T1', query: 'zzz-not-in-doc', fuzzy: false, segmentIndex: 2 });
+    render(<CompleteScreen doc={inTranscriptFindDoc} tid="T1" onRelabel={() => {}} />);
+    const input = screen.getByLabelText('Search in transcript') as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe('zzz-not-in-doc'));
+    expect(await screen.findByText('0 / 0')).toBeInTheDocument();
+    await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
     expect(usePendingFind.getState().pending).toBeNull();
   });
 

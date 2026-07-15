@@ -119,12 +119,20 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
   // Applied after the reset above (declaration order matters): jump to the
   // first match at/after the clicked segment, or the last match as fallback.
   useEffect(() => {
-    if (pendingSeg === null || !matches.length) return;
+    if (pendingSeg === null) return;
+    if (!matches.length) {
+      // Client engine may not reproduce the server match (porter stemming /
+      // phonetic-code divergence) — still honor the jump to the clicked line.
+      const target = Math.min(pendingSeg, doc.segments.length - 1);
+      segRefs.current[target]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setPendingSeg(null);
+      return;
+    }
     let idx = matches.findIndex(m => m.segmentIndex >= pendingSeg);
     if (idx === -1) idx = matches.length - 1;
     setFindIdx(idx);
     setPendingSeg(null);
-  }, [pendingSeg, matches]);
+  }, [pendingSeg, matches, doc.segments.length]);
 
   const currentIdx = matches.length ? findIdx % matches.length : -1;
   const currentMatchSeg = currentIdx >= 0 ? matches[currentIdx].segmentIndex : null;
