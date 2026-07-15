@@ -5,6 +5,8 @@ import { SPEAKER_COLORS } from '../primitives/colors';
 import type { TranscriptDoc } from '../api/types';
 import { platform } from '@/platform';
 import { AudioPanel } from './AudioPanel';
+import { findMatches, type FindMatch } from '../lib/fuzzyMatch';
+import { usePendingFind } from '../stores/pendingFind';
 
 interface Props {
   doc: TranscriptDoc;
@@ -25,17 +27,27 @@ function fmtTimestamp(secs: number) {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-function highlight(text: string, q: string): ReactNode {
-  if (!q) return text;
-  const lower = text.toLowerCase();
-  const ql = q.toLowerCase();
+function renderWithMarks(
+  text: string,
+  segIndex: number,
+  matches: FindMatch[],
+  currentIdx: number,
+): ReactNode {
   const parts: ReactNode[] = [];
   let pos = 0;
-  for (let hit = lower.indexOf(ql); hit !== -1; hit = lower.indexOf(ql, pos)) {
-    if (hit > pos) parts.push(text.slice(pos, hit));
-    parts.push(<mark key={hit}>{text.slice(hit, hit + q.length)}</mark>);
-    pos = hit + q.length;
-  }
+  let any = false;
+  matches.forEach((m, i) => {
+    if (m.segmentIndex !== segIndex) return;
+    any = true;
+    if (m.start > pos) parts.push(text.slice(pos, m.start));
+    parts.push(
+      <mark key={i} className={i === currentIdx ? 'current' : undefined}>
+        {text.slice(m.start, m.end)}
+      </mark>,
+    );
+    pos = m.end;
+  });
+  if (!any) return text;
   parts.push(text.slice(pos));
   return parts;
 }
@@ -48,6 +60,8 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
   const [segEdit, setSegEdit] = useState<{ i: number; draft: string } | null>(null);
   const [findQ, setFindQ] = useState('');
   const [findIdx, setFindIdx] = useState(0);
+  const [findFuzzy, setFindFuzzy] = useState(false);
+  const [pendingSeg, setPendingSeg] = useState<number | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
 
@@ -88,17 +102,36 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
     setApplied(true);
   };
 
-  const matches = useMemo(() => {
-    const q = findQ.trim().toLowerCase();
-    if (!q) return [];
-    return doc.segments.reduce<number[]>((acc, s, i) => {
-      if (s.text.toLowerCase().includes(q)) acc.push(i);
-      return acc;
-    }, []);
-  }, [doc.segments, findQ]);
+  // One-shot handoff from a library search hit (see stores/pendingFind).
+  useEffect(() => {
+    if (!tid) return;
+    const p = usePendingFind.getState().consume(tid);
+    if (p) {
+      setFindQ(p.query);
+      setFindFuzzy(p.fuzzy);
+      setPendingSeg(p.segmentIndex);
+    }
+  }, [tid]);
 
-  useEffect(() => { setFindIdx(0); }, [findQ]);
-  const currentMatchSeg = matches.length ? matches[findIdx % matches.length] : null;
+  const matches = useMemo(
+    () => findMatches(doc.segments, findQ.trim(), findFuzzy),
+    [doc.segments, findQ, findFuzzy],
+  );
+
+  useEffect(() => { setFindIdx(0); }, [findQ, findFuzzy]);
+
+  // Applied after the reset above (declaration order matters): jump to the
+  // first match at/after the clicked segment, or the last match as fallback.
+  useEffect(() => {
+    if (pendingSeg === null || !matches.length) return;
+    let idx = matches.findIndex(m => m.segmentIndex >= pendingSeg);
+    if (idx === -1) idx = matches.length - 1;
+    setFindIdx(idx);
+    setPendingSeg(null);
+  }, [pendingSeg, matches]);
+
+  const currentIdx = matches.length ? findIdx % matches.length : -1;
+  const currentMatchSeg = currentIdx >= 0 ? matches[currentIdx].segmentIndex : null;
 
   const seekRef = useRef<((secs: number) => void) | null>(null);
 
@@ -276,8 +309,18 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
           placeholder="Find in transcript…"
           value={findQ}
           onChange={e => setFindQ(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') step(e.shiftKey ? -1 : 1); }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') step(e.shiftKey ? -1 : 1);
+            else if (e.key === 'Escape') setFindQ('');
+          }}
         />
+        <button
+          className={'find-fuzzy' + (findFuzzy ? ' on' : '')}
+          aria-label="Fuzzy matching"
+          aria-pressed={findFuzzy}
+          title="Fuzzy matching — also finds words that sound alike"
+          onClick={() => setFindFuzzy(f => !f)}
+        >~ fuzzy</button>
         {findQ.trim() && (
           <>
             <span className="find-count">{matches.length ? `${(findIdx % matches.length) + 1} / ${matches.length}` : '0 / 0'}</span>
@@ -318,7 +361,7 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
                 />
               ) : (
                 <p>
-                  {highlight(seg.text, findQ.trim())}
+                  {renderWithMarks(seg.text, i, matches, currentIdx)}
                   {onEditSegment && (
                     <button className="icon-btn seg-edit-btn" aria-label={`Edit line ${i + 1}`}
                             title="Edit line" onClick={() => setSegEdit({ i, draft: seg.text })}>

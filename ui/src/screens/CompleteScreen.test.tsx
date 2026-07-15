@@ -1,7 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { CompleteScreen } from './CompleteScreen';
 import { vi } from 'vitest';
 import type { TranscriptDoc } from '../api/types';
+import { usePendingFind } from '../stores/pendingFind';
 
 Element.prototype.scrollIntoView = vi.fn();
 
@@ -239,4 +240,70 @@ test('summarize error is shown inline as an alert', async () => {
   await new Promise(r => setTimeout(r, 0));
 
   expect(screen.getByRole('alert')).toHaveTextContent('cannot reach provider');
+});
+
+const inTranscriptFindDoc = {
+  version: 1,
+  audio_path: '/x/a.mp3',
+  duration_seconds: 10,
+  language: 'en',
+  speakers: { SPEAKER_00: 'Alice' },
+  segments: [
+    { start: 0, end: 2, speaker: 'SPEAKER_00', text: 'the cat sat on the cat mat' },
+    { start: 2, end: 4, speaker: 'SPEAKER_00', text: 'nothing here' },
+    { start: 4, end: 6, speaker: 'SPEAKER_00', text: 'Kaitlyn presented the plan' },
+  ],
+  models: {},
+  created_at: '2026-07-15T10:00:00Z',
+} as TranscriptDoc;
+
+describe('in-transcript find', () => {
+  beforeEach(() => {
+    usePendingFind.setState({ pending: null });
+  });
+
+  it('counts occurrences, not segments', async () => {
+    render(<CompleteScreen doc={inTranscriptFindDoc} onRelabel={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Search in transcript'), { target: { value: 'cat' } });
+    expect(await screen.findByText('1 / 2')).toBeInTheDocument();
+  });
+
+  it('fuzzy toggle finds phonetic matches and marks them', async () => {
+    render(<CompleteScreen doc={inTranscriptFindDoc} onRelabel={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Search in transcript'), { target: { value: 'Catelin' } });
+    expect(await screen.findByText('0 / 0')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Fuzzy matching'));
+    expect(await screen.findByText('1 / 1')).toBeInTheDocument();
+    expect(screen.getByText('Kaitlyn').tagName).toBe('MARK');
+  });
+
+  it('marks the current occurrence with the current class', async () => {
+    render(<CompleteScreen doc={inTranscriptFindDoc} onRelabel={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Search in transcript'), { target: { value: 'cat' } });
+    await screen.findByText('1 / 2');
+    const marks = screen.getAllByText('cat', { selector: 'mark' });
+    expect(marks).toHaveLength(2);
+    expect(marks[0].className).toContain('current');
+    fireEvent.click(screen.getByLabelText('Next match'));
+    expect(await screen.findByText('2 / 2')).toBeInTheDocument();
+    expect(screen.getAllByText('cat', { selector: 'mark' })[1].className).toContain('current');
+  });
+
+  it('consumes pendingFind: pre-fills query and jumps to the segment', async () => {
+    usePendingFind.getState().set({ tid: 'T1', query: 'Kaitlyn', fuzzy: false, segmentIndex: 2 });
+    render(<CompleteScreen doc={inTranscriptFindDoc} tid="T1" onRelabel={() => {}} />);
+    const input = screen.getByLabelText('Search in transcript') as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe('Kaitlyn'));
+    expect(await screen.findByText('1 / 1')).toBeInTheDocument();
+    expect(usePendingFind.getState().pending).toBeNull();
+  });
+
+  it('escape clears the query', async () => {
+    render(<CompleteScreen doc={inTranscriptFindDoc} onRelabel={() => {}} />);
+    const input = screen.getByLabelText('Search in transcript') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'cat' } });
+    await screen.findByText('1 / 2');
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(input.value).toBe('');
+  });
 });

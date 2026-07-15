@@ -755,6 +755,16 @@ input, textarea { font-family: inherit; color: inherit; }
 
 .doc-find .icon-btn { width: 22px; height: 22px; }
 
+.find-fuzzy {
+  font-family: var(--mono); font-size: 11px; white-space: nowrap;
+  background: transparent; border: 0.5px solid var(--line); border-radius: 999px;
+  color: var(--ink-dim); padding: 2px 8px; cursor: pointer;
+}
+.find-fuzzy.on {
+  color: var(--accent); border-color: var(--accent-line);
+  background: var(--accent-faint);
+}
+
 /* ─── Summary panel ─── */
 .summary-panel {
   background: var(--bg-elev); border: 0.5px solid var(--line);
@@ -823,6 +833,10 @@ input, textarea { font-family: inherit; color: inherit; }
 .transcript .turn p mark {
   background: var(--accent-faint); color: var(--accent);
   padding: 0 2px; border-radius: 2px; font-style: normal;
+}
+
+.transcript .turn p mark.current {
+  background: var(--accent); color: var(--bg, #101012);
 }
 
 .transcript .turn.find-current {

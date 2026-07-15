@@ -62,6 +62,8 @@ function tokensMatch(q: Token, t: Token): boolean {
  * Fuzzy mode: the query's word tokens must match a consecutive run of the
  * segment's word tokens, each pair matching by Double Metaphone code
  * equality or edit distance ≤ 1 (both tokens ≥ 5 chars).
+ *
+ * Matches are ordered by segmentIndex then start, and non-overlapping.
  */
 export function findMatches(
   segments: { text: string }[],
