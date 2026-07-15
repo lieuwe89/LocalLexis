@@ -597,8 +597,10 @@ input, textarea { font-family: inherit; color: inherit; }
 .progress .err { color: var(--danger); font-family: var(--mono); font-size: 13px; }
 
 /* ─────────── Complete screen ─────────── */
+/* Wide cap (was 920px): transcript reading benefits from the full window,
+   and long segment lines must stay fully readable without clipping. */
 .complete {
-  max-width: 920px; margin: 0 auto; padding: 36px 40px 80px;
+  max-width: 1600px; margin: 0 auto; padding: 36px 48px 80px;
   display: flex; flex-direction: column; gap: 28px;
 }
 
@@ -813,7 +815,8 @@ input, textarea { font-family: inherit; color: inherit; }
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
 }
 
-.transcript .turn p { margin: 0; color: var(--ink); }
+/* overflow-wrap so a long unbroken token can never clip a line */
+.transcript .turn p { margin: 0; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
 
 .transcript .turn p em { color: var(--ink-dim); font-style: normal; }
 
@@ -1012,7 +1015,7 @@ input, textarea { font-family: inherit; color: inherit; }
 }
 
 /* ─────────── Library screen ─────────── */
-.library { max-width: 920px; margin: 0 auto; padding: 36px 40px 80px; display: flex; flex-direction: column; gap: 22px; }
+.library { max-width: 1600px; margin: 0 auto; padding: 36px 48px 80px; display: flex; flex-direction: column; gap: 22px; }
 .lib-search {
   display: flex; align-items: center; gap: 10px;
   background: var(--bg-elev); border: 0.5px solid var(--line); border-radius: 6px;
