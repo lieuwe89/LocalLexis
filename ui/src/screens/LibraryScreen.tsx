@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Icon } from '../primitives/Icon';
 import { useLibrary } from '../stores/library';
 import { useTranscripts } from '../stores/transcripts';
+import { usePendingFind } from '../stores/pendingFind';
 import type { Route } from '../types/route';
 
 interface Props {
@@ -23,6 +24,12 @@ function fmtWhen(iso?: string) {
   return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function fmtTs(secs: number) {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
 export function LibraryScreen({ setRoute, setTid }: Props) {
   const items = useLibrary(s => s.items);
   const all = useLibrary(s => s.all);
@@ -32,6 +39,11 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
   const remove = useLibrary(s => s.remove);
   const load = useTranscripts(s => s.load);
   const rename = useTranscripts(s => s.rename);
+  const fuzzy = useLibrary(s => s.fuzzy);
+  const setFuzzy = useLibrary(s => s.setFuzzy);
+  const sort = useLibrary(s => s.sort);
+  const setSort = useLibrary(s => s.setSort);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null);
 
@@ -64,6 +76,21 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
             aria-label="Clear search"
           >×</button>
         )}
+        <button
+          className={'lib-toggle' + (fuzzy ? ' on' : '')}
+          aria-label="Fuzzy matching"
+          aria-pressed={fuzzy}
+          title="Fuzzy matching — also finds words that sound alike"
+          onClick={() => setFuzzy(!fuzzy)}
+        >~ fuzzy</button>
+        {isSearching && (
+          <button
+            className="lib-toggle"
+            aria-label="Sort order"
+            title="Toggle between relevance and date ordering"
+            onClick={() => setSort(sort === 'relevance' ? 'date' : 'relevance')}
+          >{sort === 'relevance' ? '↓ relevance' : '↓ date'}</button>
+        )}
       </div>
       {items.length === 0 ? (
         <div className="lib-empty">
@@ -78,7 +105,7 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
             const when = fmtWhen(i.created_at);
             return (
               <div key={i.id}
-                   className={'lib-row' + (i.error ? ' has-error' : '') + (i.snippet_parts && i.snippet_parts.length > 0 ? ' has-snippet' : '')}
+                   className={'lib-row' + (i.error ? ' has-error' : '') + ((i.hits?.length || i.snippet_parts?.length) ? ' has-snippet' : '')}
                    onClick={async () => {
                      try { await load(i.id); setTid(i.id); setRoute('complete'); } catch {}
                    }}>
@@ -129,7 +156,42 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
                   </button>
                   <span className="chev"><Icon name="chev" size={12} /></span>
                 </div>
-                {i.snippet_parts && i.snippet_parts.length > 0 && (
+                {i.hits && i.hits.length > 0 ? (
+                  <div className="lib-hits">
+                    {(expanded === i.id ? i.hits : i.hits.slice(0, 3)).map(h => (
+                      <button
+                        key={h.segment_index}
+                        className="lib-hit"
+                        aria-label={`Jump to match at segment ${h.segment_index}`}
+                        onClick={async e => {
+                          e.stopPropagation();
+                          usePendingFind.getState().set({
+                            tid: i.id,
+                            query: q.trim(),
+                            fuzzy,
+                            segmentIndex: h.segment_index,
+                          });
+                          try { await load(i.id); setTid(i.id); setRoute('complete'); } catch {}
+                        }}
+                      >
+                        {h.start != null && <span className="lib-hit-ts">{fmtTs(h.start)}</span>}
+                        <span className="lib-hit-text">
+                          {h.snippet_parts.map((p, idx) =>
+                            p.match
+                              ? <mark key={idx}>{p.text}</mark>
+                              : <span key={idx}>{p.text}</span>
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                    {i.hits.length > 3 && expanded !== i.id && (
+                      <button
+                        className="lib-hit-more"
+                        onClick={e => { e.stopPropagation(); setExpanded(i.id); }}
+                      >+{(i.total_hits ?? i.hits.length) - 3} more</button>
+                    )}
+                  </div>
+                ) : i.snippet_parts && i.snippet_parts.length > 0 && (
                   <div className="lib-snippet">
                     {i.snippet_parts.map((p, idx) =>
                       p.match

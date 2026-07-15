@@ -1096,6 +1096,36 @@ input, textarea { font-family: inherit; color: inherit; }
   font-style: normal;
   font-weight: 500;
 }
+.lib-toggle {
+  font-family: var(--mono); font-size: 11px; white-space: nowrap;
+  background: transparent; border: 0.5px solid var(--line); border-radius: 999px;
+  color: var(--ink-dim); padding: 2px 8px; cursor: pointer;
+}
+.lib-toggle.on {
+  color: var(--accent); border-color: var(--accent-line);
+  background: var(--accent-faint);
+}
+
+.lib-hits { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 6px 30px; }
+.lib-hit {
+  display: flex; align-items: baseline; gap: 8px; text-align: left;
+  background: transparent; border: none; border-radius: 4px;
+  padding: 2px 6px; cursor: pointer; color: var(--ink-muted); font-size: 12px;
+}
+.lib-hit:hover { background: var(--accent-faint); }
+.lib-hit-ts { font-family: var(--mono); font-size: 10px; color: var(--ink-dim); flex: none; }
+/* Hit lines wrap fully — transcript text must never be truncated (user requirement). */
+.lib-hit-text { min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.lib-hit-text mark {
+  background: var(--accent-faint); color: var(--accent);
+  padding: 0 2px; border-radius: 2px;
+}
+.lib-hit-more {
+  align-self: flex-start; background: transparent; border: none;
+  color: var(--ink-dim); font-size: 11px; cursor: pointer; padding: 2px 6px;
+}
+.lib-hit-more:hover { color: var(--ink); }
+
 .lib-search-spinner {
   width: 12px; height: 12px;
   border: 1.5px solid var(--line-strong);
