@@ -51,6 +51,7 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
 
   // Debounce so we don't hit /transcripts on every keystroke.
   useEffect(() => {
+    setExpanded(null); // new search → collapse any expanded hit list
     const t = setTimeout(() => { search(q); }, 200);
     return () => clearTimeout(t);
   }, [q, search]);
@@ -165,9 +166,12 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
                         aria-label={`Jump to match at segment ${h.segment_index}`}
                         onClick={async e => {
                           e.stopPropagation();
+                          // The rendered hits came from the store's query, not
+                          // the (debounced) input — use the store so a mid-edit
+                          // click can't record a mismatched find query.
                           usePendingFind.getState().set({
                             tid: i.id,
-                            query: q.trim(),
+                            query: useLibrary.getState().query.trim(),
                             fuzzy,
                             segmentIndex: h.segment_index,
                           });
@@ -188,7 +192,12 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
                       <button
                         className="lib-hit-more"
                         onClick={e => { e.stopPropagation(); setExpanded(i.id); }}
-                      >+{(i.total_hits ?? i.hits.length) - 3} more</button>
+                      >
+                        {/* Promise only what expanding reveals; hits[] is capped
+                            server-side, so surface the true total separately. */}
+                        +{i.hits.length - 3} more
+                        {i.total_hits != null && i.total_hits > i.hits.length ? ` (of ${i.total_hits})` : ''}
+                      </button>
                     )}
                   </div>
                 ) : i.snippet_parts && i.snippet_parts.length > 0 && (

@@ -166,17 +166,21 @@ describe('library segment hits', () => {
     useLibrary.setState({ items: [hitItem], all: [hitItem], query: 'budget' });
     render(<LibraryScreen setRoute={() => {}} setTid={() => {}} />);
     expect(screen.getAllByText('budget', { selector: 'mark' })).toHaveLength(3);
-    const more = screen.getByRole('button', { name: '+2 more' }); // total_hits 5 − 3 shown
+    // 4 hits delivered, 3 shown → expanding reveals 1; total_hits 5 > 4 so
+    // the true total is surfaced separately.
+    const more = screen.getByRole('button', { name: '+1 more (of 5)' });
     fireEvent.click(more);
     expect(screen.getAllByText('budget', { selector: 'mark' })).toHaveLength(4);
   });
 
-  it('clicking a hit sets pendingFind and opens the transcript', async () => {
+  it('clicking a hit sets pendingFind from the STORE query and opens the transcript', async () => {
     const setRoute = vi.fn();
     const setTid = vi.fn();
+    // Seed the query in the store only — no typing into the input. This
+    // proves the click handler reads the store query (which produced the
+    // rendered hits), not the local, debounced input value.
     useLibrary.setState({ items: [hitItem], all: [hitItem], query: 'budget', fuzzy: true });
     render(<LibraryScreen setRoute={setRoute} setTid={setTid} />);
-    fireEvent.change(screen.getByPlaceholderText(/Search transcripts/), { target: { value: 'budget' } });
     fireEvent.click(screen.getAllByRole('button', { name: /Jump to match/ })[0]);
     await waitFor(() => expect(setTid).toHaveBeenCalledWith('t1'));
     expect(setRoute).toHaveBeenCalledWith('complete');
