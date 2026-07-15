@@ -18,6 +18,14 @@ export type SseEvent =
   | { type: 'complete'; transcript_id: string; paths: Record<string, string> }
   | { type: 'error'; message: string };
 
+export interface SegmentHit {
+  segment_index: number;
+  /** Segment start time in seconds; null for legacy rows. */
+  start?: number | null;
+  snippet_parts: { text: string; match: boolean }[];
+  score: number;
+}
+
 export interface TranscriptListItem {
   id: string;
   path: string;
@@ -37,6 +45,10 @@ export interface TranscriptListItem {
    * transcript text cannot become DOM. Only set on search results.
    */
   snippet_parts?: { text: string; match: boolean }[];
+  /** Per-segment search hits (only set on search results, schema v2 server). */
+  hits?: SegmentHit[];
+  /** Total matching segments (hits[] is capped server-side). */
+  total_hits?: number;
 }
 
 export interface TranscriptSegment {

@@ -10,8 +10,14 @@ interface State {
   all: TranscriptListItem[];
   query: string;
   searching: boolean;
+  /** Phonetic + typo matching for searches. */
+  fuzzy: boolean;
+  /** Result ordering while a query is active. */
+  sort: 'relevance' | 'date';
   refresh: () => Promise<void>;
   search: (q: string) => Promise<void>;
+  setFuzzy: (f: boolean) => void;
+  setSort: (s: 'relevance' | 'date') => void;
   remove: (id: string) => Promise<void>;
 }
 
@@ -20,6 +26,8 @@ export const useLibrary = create<State>((set, get) => ({
   all: [],
   query: '',
   searching: false,
+  fuzzy: false,
+  sort: 'relevance',
   refresh: async () => {
     const rows = await api<TranscriptListItem[]>('/transcripts');
     set({ all: rows });
@@ -33,15 +41,27 @@ export const useLibrary = create<State>((set, get) => ({
       return;
     }
     set({ searching: true });
+    const { fuzzy, sort } = get();
+    let url = `/transcripts?q=${encodeURIComponent(trimmed)}`;
+    if (fuzzy) url += '&fuzzy=1';
+    if (sort !== 'relevance') url += `&sort=${sort}`;
     try {
-      const rows = await api<TranscriptListItem[]>(
-        `/transcripts?q=${encodeURIComponent(trimmed)}`,
-      );
+      const rows = await api<TranscriptListItem[]>(url);
       // Guard against a stale response winning over a newer query
       if (get().query === q) set({ items: rows, searching: false });
     } catch {
       if (get().query === q) set({ searching: false });
     }
+  },
+  setFuzzy: (f: boolean) => {
+    set({ fuzzy: f });
+    const q = get().query;
+    if (q.trim()) void get().search(q);
+  },
+  setSort: (s: 'relevance' | 'date') => {
+    set({ sort: s });
+    const q = get().query;
+    if (q.trim()) void get().search(q);
   },
   remove: async (id: string) => {
     await api(`/transcripts/${id}`, { method: 'DELETE' });
