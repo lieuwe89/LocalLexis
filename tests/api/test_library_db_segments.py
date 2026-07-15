@@ -70,6 +70,17 @@ def test_empty_segments_are_skipped(db: LibraryDB, tmp_path: Path):
     db.upsert_path(p)
     assert len(_seg_rows(db, "segments_fts", "a")) == 1
 
+    # A blank segment EARLIER in the doc must not shift later indices:
+    # segment_index reflects the position in the original document, which
+    # jump-to-line in the transcript view depends on.
+    p2 = _write(tmp_path, "b", _make_doc([
+        (0.0, 1.0, "SPEAKER_00", "   "),
+        (1.0, 2.0, "SPEAKER_00", "real text"),
+    ]))
+    db.upsert_path(p2)
+    rows = _seg_rows(db, "segments_fts", "b")
+    assert [(r["segment_index"], r["text"]) for r in rows] == [(1, "real text")]
+
 
 def test_reupsert_replaces_segment_rows(db: LibraryDB, tmp_path: Path):
     p = _write(tmp_path, "a", _make_doc([(0.0, 1.0, "SPEAKER_00", "one"),

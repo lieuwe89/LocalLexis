@@ -6,6 +6,9 @@ maintains a derived index for fast ranked search across:
 - audio filename + full path
 - speaker labels (after relabeling)
 - language + ASR model metadata
+- individual segments, indexed twice: verbatim (segments_fts) and with each
+  word replaced by its Double Metaphone code (segments_phonetic) for fuzzy
+  matching — both keyed by (transcript_id, segment_index, start)
 
 The schema also reserves tables for future RAG work (chunks + embeddings),
 so adding semantic search later does not require a migration of existing
@@ -269,6 +272,14 @@ class LibraryDB:
                 # The DB is a throwaway index over the JSON sidecars: on any
                 # version mismatch, drop everything and let the next
                 # reconcile rebuild from disk.
+                #
+                # NOTE: sqlite3 auto-commits before DDL statements, so this
+                # `with self._conn` block is NOT atomic across the drops and
+                # creates below. Crash-safety relies on every statement being
+                # idempotent (DROP ... IF EXISTS / CREATE ... IF NOT EXISTS)
+                # with the version row written last, so a re-run converges.
+                # Future non-idempotent migrations must not reuse this
+                # pattern blindly.
                 for tbl in (
                     "transcripts_fts", "segments_fts", "segments_phonetic",
                     "embeddings", "chunks", "transcripts", "schema_version",
@@ -398,6 +409,10 @@ class LibraryDB:
                 "VALUES (?, ?, ?, ?, ?)",
                 (rowid, content, fts_filename, speaker_labels, meta),
             )
+            # transcript_id is UNINDEXED, so each DELETE below is a full
+            # scan of the FTS5 virtual table. Accepted deliberately: personal
+            # libraries hold hundreds of transcripts, and the worst case is a
+            # one-time full reindex after a schema bump.
             self._conn.execute(
                 "DELETE FROM segments_fts WHERE transcript_id=?", (tid,)
             )
