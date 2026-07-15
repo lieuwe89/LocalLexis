@@ -47,7 +47,7 @@ export interface TranscriptListItem {
   snippet_parts?: { text: string; match: boolean }[];
   /** Per-segment search hits (only set on search results, schema v2 server). */
   hits?: SegmentHit[];
-  /** Total matching segments (hits[] is capped server-side). */
+  /** Total matching segments within the server's candidate window (hits[] is capped to 5). */
   total_hits?: number;
 }
 

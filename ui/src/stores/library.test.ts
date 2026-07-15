@@ -34,4 +34,29 @@ describe('useLibrary search params', () => {
     useLibrary.getState().setSort('date');
     expect(mocks.api).not.toHaveBeenCalled();
   });
+
+  it('a stale response cannot overwrite a newer re-search with the same query text', async () => {
+    // Two requests share the query text 'hello' (fuzzy toggle re-searches),
+    // so only a request-generation guard can tell them apart.
+    const staleRows = [{ id: 'stale', path: 'stale.json' }];
+    const freshRows = [{ id: 'fresh', path: 'fresh.json' }];
+    const deferred: { resolve: (rows: unknown) => void }[] = [];
+    mocks.api.mockImplementation(
+      () => new Promise(resolve => deferred.push({ resolve })),
+    );
+
+    const first = useLibrary.getState().search('hello'); // fuzzy=false
+    useLibrary.getState().setFuzzy(true); // re-search, same text, fuzzy=1
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
+
+    deferred[1].resolve(freshRows); // newer request resolves first...
+    await vi.waitFor(() =>
+      expect(useLibrary.getState().items).toEqual(freshRows),
+    );
+
+    deferred[0].resolve(staleRows); // ...then the stale one arrives late
+    await first;
+    expect(useLibrary.getState().items).toEqual(freshRows);
+    expect(useLibrary.getState().searching).toBe(false);
+  });
 });

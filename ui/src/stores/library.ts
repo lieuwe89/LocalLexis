@@ -21,6 +21,12 @@ interface State {
   remove: (id: string) => Promise<void>;
 }
 
+// Monotonic id for search requests. The newest request is identified by this
+// counter, NOT by query text: fuzzy/sort toggles re-run the search with
+// identical text, so a text-based guard would let a stale in-flight response
+// (e.g. the old non-fuzzy one) overwrite the fresh results.
+let searchSeq = 0;
+
 export const useLibrary = create<State>((set, get) => ({
   items: [],
   all: [],
@@ -34,9 +40,12 @@ export const useLibrary = create<State>((set, get) => ({
     if (!get().query) set({ items: rows });
   },
   search: async (q: string) => {
+    const seq = ++searchSeq;
     set({ query: q });
     const trimmed = q.trim();
     if (!trimmed) {
+      // Bumping searchSeq above also invalidates any in-flight request so a
+      // late response can't overwrite this reset.
       set({ items: get().all, searching: false });
       return;
     }
@@ -47,10 +56,10 @@ export const useLibrary = create<State>((set, get) => ({
     if (sort !== 'relevance') url += `&sort=${sort}`;
     try {
       const rows = await api<TranscriptListItem[]>(url);
-      // Guard against a stale response winning over a newer query
-      if (get().query === q) set({ items: rows, searching: false });
+      // Only the newest request (by seq) may write results; see searchSeq.
+      if (seq === searchSeq) set({ items: rows, searching: false });
     } catch {
-      if (get().query === q) set({ searching: false });
+      if (seq === searchSeq) set({ searching: false });
     }
   },
   setFuzzy: (f: boolean) => {
