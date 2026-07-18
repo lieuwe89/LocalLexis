@@ -26,6 +26,7 @@ from speechtotext.api.routes_client import router as client_router
 from speechtotext.api.routes_config import router as config_router
 from speechtotext.api.routes_devices import router as devices_router
 from speechtotext.api.routes_hub import router as hub_router
+from speechtotext.api.routes_import import router as import_router
 from speechtotext.api.routes_ingest import (
     DEFAULT_MAX_UPLOAD_BYTES,
     router as ingest_router,
@@ -74,6 +75,8 @@ def _is_lan_signed_route(path: str, method: str) -> bool:
     if path == "/jobs/upload" and method == "POST":
         return True
     if path == "/transcripts/import/audio" and method == "POST":
+        return True
+    if path == "/transcripts/import" and method == "POST":
         return True
     return False
 
@@ -300,6 +303,7 @@ def create_app(
     )
 
     app.include_router(ask_router)
+    app.include_router(import_router)
     app.include_router(client_router)
     app.include_router(devices_router)
     app.include_router(hub_router)
