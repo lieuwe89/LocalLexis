@@ -21,6 +21,7 @@ from speechtotext.api.jobs import JobRegistry
 from speechtotext.api.library_db import LibraryDB
 from speechtotext.api.pairing import PairingTokenStore
 from speechtotext.api.reconcile import LibraryReconciler
+from speechtotext.api.routes_ask import router as ask_router
 from speechtotext.api.routes_client import router as client_router
 from speechtotext.api.routes_config import router as config_router
 from speechtotext.api.routes_devices import router as devices_router
@@ -296,6 +297,7 @@ def create_app(
         on_synced=_on_synced,
     )
 
+    app.include_router(ask_router)
     app.include_router(client_router)
     app.include_router(devices_router)
     app.include_router(hub_router)
