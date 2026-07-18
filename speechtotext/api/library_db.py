@@ -34,10 +34,11 @@ from pathlib import Path
 from typing import Iterable
 
 from speechtotext.api.phonetics import WORD_RE, encode_text, encode_token
+from speechtotext.rag.chunker import build_chunks
 
 _log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Phonetic-only hits always rank below every exact hit; bm25 values are
 # small negatives, so a large positive offset guarantees the ordering.
@@ -131,6 +132,7 @@ _DDL = [
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
         idx           INTEGER NOT NULL,
+        first_segment INTEGER,
         start_time    REAL,
         end_time      REAL,
         text          TEXT NOT NULL,
@@ -303,6 +305,8 @@ class LibraryDB:
         self.path = Path(db_path) if db_path else default_db_path()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        # (model, matrix, metas) — invalidated on any chunk/embedding write.
+        self._vec_cache: tuple | None = None
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -514,6 +518,18 @@ class LibraryDB:
                     "VALUES (?, ?, ?, ?, ?)",
                     (encode_text(text), text, tid, idx, start),
                 )
+            # RAG chunks: replace wholesale; embeddings cascade away and the
+            # EmbedWorker re-embeds on its next sweep.
+            self._conn.execute("DELETE FROM chunks WHERE transcript_id=?", (tid,))
+            for ch in build_chunks(doc):
+                self._conn.execute(
+                    "INSERT INTO chunks (transcript_id, idx, first_segment, "
+                    "start_time, end_time, text, token_count) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (tid, ch["idx"], ch["first_segment"], ch["start_time"],
+                     ch["end_time"], ch["text"], ch["token_count"]),
+                )
+            self._vec_cache = None
         return True
 
     def _upsert_error(self, json_path: Path, mtime: float, size: int, err: str) -> bool:
@@ -567,6 +583,9 @@ class LibraryDB:
             self._conn.execute(
                 "DELETE FROM transcripts WHERE rowid=?", (row["rowid"],)
             )
+            # FK cascade (PRAGMA foreign_keys=ON) drops the chunks/embeddings
+            # rows for this transcript_id; just invalidate the vector cache.
+            self._vec_cache = None
 
     def sync_dirs(self, dirs: Iterable[Path]) -> dict:
         """Reconcile the DB with the actual .json files in `dirs`.
