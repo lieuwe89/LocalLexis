@@ -119,5 +119,52 @@ class HubClient:
         resp.raise_for_status()
         return resp.json()
 
+    def post_json(self, path: str, body: dict) -> Any:
+        import json as _json
+
+        raw = _json.dumps(body).encode("utf-8")
+        headers = signed_headers(self._sk, self.device_id, "POST", path, raw)
+        headers["Content-Type"] = "application/json"
+        resp = self._http.post(path, content=raw, headers=headers)
+        resp.raise_for_status()
+        return resp.json()
+
+    def import_transcript(self, json_path: Path, audio_path: Path | None) -> Any:
+        """Two-step transcript import: stage audio (if any), then commit."""
+        import json as _json
+
+        audio_ref = None
+        audio_filename = None
+        if audio_path is not None and audio_path.is_file():
+            digest = _file_sha256(audio_path)
+            size = audio_path.stat().st_size
+            target = (
+                "/transcripts/import/audio"
+                f"?filename={quote(audio_path.name, safe='')}"
+            )
+            headers = signed_headers(
+                self._sk, self.device_id, "POST", target, body_sha256=digest
+            )
+            headers["Content-Length"] = str(size)
+            headers["Content-Type"] = "application/octet-stream"
+
+            def _stream():
+                with audio_path.open("rb") as fh:
+                    while chunk := fh.read(_CHUNK):
+                        yield chunk
+
+            resp = self._http.post(target, content=_stream(), headers=headers)
+            resp.raise_for_status()
+            audio_ref = resp.json()["audio_ref"]
+            audio_filename = audio_path.name
+
+        doc = _json.loads(json_path.read_text(encoding="utf-8"))
+        return self.post_json("/transcripts/import", {
+            "tid": json_path.stem,
+            "transcript": doc,
+            "audio_ref": audio_ref,
+            "audio_filename": audio_filename,
+        })
+
     def close(self) -> None:
         self._http.close()

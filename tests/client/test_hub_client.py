@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import json
 
 import httpx
 import pytest
@@ -109,3 +110,102 @@ def test_upload_filename_with_space_is_percent_encoded(tmp_path):
     )
     out = client.upload_audio(audio)
     assert out["query"] == "filename=my%20rec.wav"
+
+
+def test_post_json_signs_and_posts():
+    sk = SigningKey.generate()
+    client = HubClient(
+        "http://hub:8010", "dev-1", sk, transport=_echo_transport()
+    )
+    out = client.post_json("/transcripts/import", {"tid": "t1"})
+    assert out["method"] == "POST"
+    assert out["path"] == "/transcripts/import"
+    assert out["device"] == "dev-1"
+    assert out["has_sig"] is True
+    assert out["body_len"] == len(b'{"tid": "t1"}')
+
+
+def _import_transport(recorder):
+    """Answers the two import-flow requests and records what it saw."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorder.append(request)
+        if request.url.path == "/transcripts/import/audio":
+            return httpx.Response(200, json={"audio_ref": "r.import"})
+        assert request.url.path == "/transcripts/import"
+        return httpx.Response(200, json={"imported": True})
+    return httpx.MockTransport(handler)
+
+
+def test_import_transcript_two_step(tmp_path):
+    audio = tmp_path / "meeting.wav"
+    audio.write_bytes(b"RIFF" + b"\x00" * 64)
+    doc = {"segments": [{"speaker": "SPEAKER_00", "text": "hi"}]}
+    json_path = tmp_path / "meeting.json"
+    json_path.write_text(json.dumps(doc), encoding="utf-8")
+
+    sk = SigningKey.generate()
+    seen = []
+    client = HubClient(
+        "http://hub:8010", "dev-1", sk, transport=_import_transport(seen)
+    )
+    out = client.import_transcript(json_path, audio)
+
+    assert out == {"imported": True}
+    assert len(seen) == 2
+
+    upload_req = seen[0]
+    assert upload_req.url.path == "/transcripts/import/audio"
+    assert upload_req.url.query.decode() == "filename=meeting.wav"
+    assert upload_req.headers["Content-Type"] == "application/octet-stream"
+    assert upload_req.headers["Content-Length"] == str(audio.stat().st_size)
+    assert len(upload_req.read()) == audio.stat().st_size
+
+    commit_req = seen[1]
+    assert commit_req.url.path == "/transcripts/import"
+    body = json.loads(commit_req.read())
+    assert body["tid"] == "meeting"
+    assert body["transcript"] == doc
+    assert body["audio_ref"] == "r.import"
+    assert body["audio_filename"] == "meeting.wav"
+
+
+def test_import_transcript_json_only(tmp_path):
+    doc = {"segments": []}
+    json_path = tmp_path / "meeting.json"
+    json_path.write_text(json.dumps(doc), encoding="utf-8")
+
+    sk = SigningKey.generate()
+    seen = []
+    client = HubClient(
+        "http://hub:8010", "dev-1", sk, transport=_import_transport(seen)
+    )
+    out = client.import_transcript(json_path, None)
+
+    assert out == {"imported": True}
+    assert len(seen) == 1
+    body = json.loads(seen[0].read())
+    assert body["tid"] == "meeting"
+    assert body["audio_ref"] is None
+    assert body["audio_filename"] is None
+
+
+def test_import_transcript_missing_audio_file_falls_back_to_json_only(tmp_path):
+    """audio_path is set but the file doesn't exist on disk (e.g. already
+    cleaned up) -> behaves like the json-only case rather than crashing."""
+    doc = {"segments": []}
+    json_path = tmp_path / "meeting.json"
+    json_path.write_text(json.dumps(doc), encoding="utf-8")
+    missing_audio = tmp_path / "gone.wav"
+
+    sk = SigningKey.generate()
+    seen = []
+    client = HubClient(
+        "http://hub:8010", "dev-1", sk, transport=_import_transport(seen)
+    )
+    out = client.import_transcript(json_path, missing_audio)
+
+    assert out == {"imported": True}
+    assert len(seen) == 1
+    body = json.loads(seen[0].read())
+    assert body["audio_ref"] is None
+    assert body["audio_filename"] is None
