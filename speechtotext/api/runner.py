@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -267,6 +268,60 @@ def run_summarize_job(
             emit(ErrorEvent(message=str(exc)))
         except TranscriptTooLongError as exc:
             emit(ErrorEvent(message=str(exc)))
+        except Exception as exc:  # noqa: BLE001
+            emit(ErrorEvent(message=f"{type(exc).__name__}: {exc}"))
+        finally:
+            if _own_loop:
+                loop.call_soon_threadsafe(loop.stop)
+
+    threading.Thread(target=_work, daemon=True).start()
+    if _own_loop:
+        threading.Thread(target=lambda: (loop.run_forever(), loop.close()), daemon=True).start()
+
+
+def run_migrate_job(
+    registry: JobRegistry,
+    job_id: str,
+    db,
+) -> None:
+    """One-time sweep of every local-origin transcript up to the joined
+    hub. Stores {"migrated": [...], "failed": [...]} on the JobRecord; sets
+    ``migrated_at`` in the client state only when nothing failed."""
+    try:
+        loop = asyncio.get_running_loop()
+        _own_loop = False
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        _own_loop = True
+
+    emit = _make_emit(loop, registry, job_id)
+
+    def _work() -> None:
+        try:
+            emit(StageEvent(stage="migrate", percent=0.0))
+            from speechtotext.api import routes_client
+            from speechtotext.client import identity as _identity
+            from speechtotext.client import migrate as migrate_mod
+            from speechtotext.client import state as _state
+            from speechtotext.client.hub_client import HubClient
+
+            st = _state.load()
+            ident = _identity.load()
+            if st is None or ident is None:
+                emit(ErrorEvent(message="not joined to a hub"))
+                return
+            hub = HubClient(
+                st.hub_url, st.device_id, ident.signing_key(),
+                transport=routes_client.sync_test_transport(),
+            )
+            try:
+                report = migrate_mod.sweep_local(hub, db)
+            finally:
+                hub.close()
+            registry.get(job_id).result = report
+            if not report["failed"]:
+                _state.update_fields(migrated_at=time.time())
+            emit(CompleteEvent())
         except Exception as exc:  # noqa: BLE001
             emit(ErrorEvent(message=f"{type(exc).__name__}: {exc}"))
         finally:

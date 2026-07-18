@@ -89,6 +89,8 @@ class HubRuntime:
             "pending_uploads": len(upload_queue.pending()),
             "last_error": self._last_error,
             "last_sync_at": self._last_sync_at,
+            "migrated_at": st.migrated_at,
+            "offline_capture": st.offline_capture,
         }
 
     def _run(self) -> None:

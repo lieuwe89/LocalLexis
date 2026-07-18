@@ -118,6 +118,24 @@ def hub_join(req: JoinRequest, request: Request) -> dict:
             "hub_url": st.hub_url, "workspace_id": st.workspace_id}
 
 
+@router.post("/client/hub/migrate", status_code=202)
+def hub_migrate(request: Request) -> dict:
+    from speechtotext.api import runner  # lazy, matches sibling route pattern
+    from speechtotext.api.jobs import JobStatus
+
+    if not _runtime(request).joined():
+        raise HTTPException(status_code=409, detail="not joined to a hub")
+    registry = request.app.state.jobs
+    # Two concurrent sweeps over the same rows means double uploads and
+    # bogus "orphaned files" errors from the losing trash-move.
+    for rec in registry.all():
+        if rec.kind == "migrate" and rec.status in (JobStatus.pending, JobStatus.running):
+            raise HTTPException(status_code=409, detail="migration already running")
+    job_id = registry.create(kind="migrate", audio_path=None)
+    runner.run_migrate_job(registry, job_id, request.app.state.library_db)
+    return {"job_id": job_id}
+
+
 @router.post("/client/hub/leave")
 def hub_leave(request: Request) -> dict:
     runtime = _runtime(request)

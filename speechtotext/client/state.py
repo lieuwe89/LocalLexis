@@ -8,9 +8,16 @@ relationship, which `leave()` must delete atomically with the rest.
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import asdict, dataclass
 
 from speechtotext.client.paths import hub_dir
+
+# Serializes read-modify-write cycles: HubRuntime's periodic update_cursor
+# and the migrate job's update_fields(migrated_at=...) run on different
+# threads; without this, one save can silently clobber the other's field.
+# ponytail: process-wide lock; fine while one sidecar process owns the file.
+_lock = threading.Lock()
 
 
 def _state_file():
@@ -25,9 +32,11 @@ class ClientState:
     device_name: str
     tls_spki_b64: str | None
     cursor: float
+    migrated_at: float | None = None
+    offline_capture: str = "local"  # "local" | "queue"
 
 
-def save(st: ClientState) -> None:
+def _save_unlocked(st: ClientState) -> None:
     # Atomic tmp-then-rename, but deliberately NO fsync (unlike the device
     # key in identity.py). This state is fully recoverable: a lost cursor
     # just re-pulls sync from an older point (idempotent), and the rest is
@@ -40,6 +49,11 @@ def save(st: ClientState) -> None:
     tmp.replace(path)
 
 
+def save(st: ClientState) -> None:
+    with _lock:
+        _save_unlocked(st)
+
+
 def load() -> ClientState | None:
     path = _state_file()
     if not path.exists():
@@ -48,11 +62,20 @@ def load() -> ClientState | None:
 
 
 def update_cursor(cursor: float) -> None:
-    st = load()
-    if st is None:
-        return
-    st.cursor = cursor
-    save(st)
+    update_fields(cursor=cursor)
+
+
+def update_fields(**kwargs) -> None:
+    # Lock spans the whole read-modify-write so a concurrent updater
+    # (runtime cursor save vs. migrate job's migrated_at) can't clobber
+    # the other's field with a stale load.
+    with _lock:
+        st = load()
+        if st is None:
+            return
+        for k, v in kwargs.items():
+            setattr(st, k, v)
+        _save_unlocked(st)
 
 
 def delete() -> None:
