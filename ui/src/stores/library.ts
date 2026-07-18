@@ -10,6 +10,9 @@ interface State {
   all: TranscriptListItem[];
   query: string;
   searching: boolean;
+  /** Set when the last search request failed (e.g. embedding model
+   *  unavailable); cleared at the start of the next search attempt. */
+  searchError: string | null;
   /** Phonetic + typo matching for searches. */
   fuzzy: boolean;
   /** Meaning-based (embedding) matching for searches. */
@@ -35,6 +38,7 @@ export const useLibrary = create<State>((set, get) => ({
   all: [],
   query: '',
   searching: false,
+  searchError: null,
   fuzzy: false,
   semantic: false,
   sort: 'relevance',
@@ -53,7 +57,7 @@ export const useLibrary = create<State>((set, get) => ({
       set({ items: get().all, searching: false });
       return;
     }
-    set({ searching: true });
+    set({ searching: true, searchError: null });
     const { fuzzy, semantic, sort } = get();
     let url = `/transcripts?q=${encodeURIComponent(trimmed)}`;
     if (fuzzy) url += '&fuzzy=1';
@@ -63,8 +67,11 @@ export const useLibrary = create<State>((set, get) => ({
       const rows = await api<TranscriptListItem[]>(url);
       // Only the newest request (by seq) may write results; see searchSeq.
       if (seq === searchSeq) set({ items: rows, searching: false });
-    } catch {
-      if (seq === searchSeq) set({ searching: false });
+    } catch (e) {
+      if (seq === searchSeq) {
+        const message = e instanceof Error ? e.message : 'search failed';
+        set({ searching: false, searchError: message });
+      }
     }
   },
   setFuzzy: (f: boolean) => {

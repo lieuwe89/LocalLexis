@@ -131,9 +131,10 @@ _DDL = [
         tokenize='unicode61'
     )
     """,
-    # Forward-compat tables for RAG. Empty for now; populating them is a
-    # separate feature. Defined here so adding semantic search later does
-    # not require a schema migration of existing rows.
+    # Tables for RAG. `chunks` rows are written on every transcript upsert;
+    # `embeddings` rows are backfilled asynchronously by EmbedWorker (see
+    # embed_worker.py). Defined here from the start so adding semantic
+    # search did not require a schema migration of existing rows.
     """
     CREATE TABLE IF NOT EXISTS chunks (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,

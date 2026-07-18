@@ -72,4 +72,15 @@ describe('useLibrary search params', () => {
     expect(useLibrary.getState().items).toEqual(freshRows);
     expect(useLibrary.getState().searching).toBe(false);
   });
+
+  it('sets searchError when the api call rejects, and clears it on the next successful search', async () => {
+    mocks.api.mockRejectedValueOnce(new Error('503 /transcripts: embedding model unavailable'));
+    await useLibrary.getState().search('x');
+    expect(useLibrary.getState().searchError).toBe('503 /transcripts: embedding model unavailable');
+    expect(useLibrary.getState().searching).toBe(false);
+
+    mocks.api.mockResolvedValueOnce([]);
+    await useLibrary.getState().search('y');
+    expect(useLibrary.getState().searchError).toBeNull();
+  });
 });

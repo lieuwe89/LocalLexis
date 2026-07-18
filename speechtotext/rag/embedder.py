@@ -11,7 +11,6 @@ import threading
 import numpy as np
 
 EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
-EMBED_DIM = 384
 
 
 class EmbedderError(RuntimeError):
@@ -29,11 +28,25 @@ class Embedder:
             if self._model is None:
                 try:
                     from sentence_transformers import SentenceTransformer
-                    self._model = SentenceTransformer(self.model_name)
-                except Exception as exc:  # ImportError, download/IO failure
+                except Exception as exc:  # pragma: no cover - import failure
                     raise EmbedderError(
                         f"embedding model unavailable: {exc}"
                     ) from exc
+                # Privacy invariant: once the model is cached, loading it must
+                # make zero network calls. Try local-files-only first; only
+                # fall back to a network fetch on the very first-ever load
+                # (model not yet cached).
+                try:
+                    self._model = SentenceTransformer(
+                        self.model_name, local_files_only=True
+                    )
+                except Exception:
+                    try:
+                        self._model = SentenceTransformer(self.model_name)
+                    except Exception as exc:
+                        raise EmbedderError(
+                            f"embedding model unavailable: {exc}"
+                        ) from exc
         return self._model
 
     def embed(self, texts: list[str]) -> np.ndarray:

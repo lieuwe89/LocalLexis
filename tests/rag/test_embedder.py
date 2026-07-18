@@ -52,3 +52,63 @@ def test_get_embedder_is_singleton():
     a = mod.get_embedder()
     b = mod.get_embedder()
     assert a is b
+
+
+def _fake_st_module(calls, local_ok, network_ok):
+    """Build a fake sentence_transformers module recording call kwargs.
+
+    local_ok/network_ok control whether the local_files_only=True call and
+    the plain (network) call succeed or raise.
+    """
+    class _Model:
+        def __init__(self, name, **kwargs):
+            self.name = name
+            self.kwargs = kwargs
+
+    def SentenceTransformer(name, **kwargs):
+        calls.append(kwargs)
+        local_files_only = kwargs.get("local_files_only", False)
+        ok = local_ok if local_files_only else network_ok
+        if not ok:
+            raise OSError("simulated failure")
+        return _Model(name, **kwargs)
+
+    import types
+    return types.SimpleNamespace(SentenceTransformer=SentenceTransformer)
+
+
+def test_load_tries_local_files_only_first_then_falls_back_to_network(monkeypatch):
+    calls: list[dict] = []
+    fake_mod = _fake_st_module(calls, local_ok=False, network_ok=True)
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_mod)
+
+    e = mod.Embedder()
+    model = e._load()
+
+    assert len(calls) == 2
+    assert calls[0].get("local_files_only") is True
+    assert "local_files_only" not in calls[1]
+    assert model.name == e.model_name
+
+
+def test_load_uses_cached_model_with_zero_network_call_when_local_load_succeeds(monkeypatch):
+    calls: list[dict] = []
+    fake_mod = _fake_st_module(calls, local_ok=True, network_ok=True)
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_mod)
+
+    e = mod.Embedder()
+    e._load()
+
+    assert len(calls) == 1
+    assert calls[0].get("local_files_only") is True
+
+
+def test_load_raises_embedder_error_when_both_local_and_network_fail(monkeypatch):
+    calls: list[dict] = []
+    fake_mod = _fake_st_module(calls, local_ok=False, network_ok=False)
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_mod)
+
+    e = mod.Embedder()
+    with pytest.raises(mod.EmbedderError):
+        e._load()
+    assert len(calls) == 2

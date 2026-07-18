@@ -37,6 +37,7 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
   const refresh = useLibrary(s => s.refresh);
   const search = useLibrary(s => s.search);
   const searching = useLibrary(s => s.searching);
+  const searchError = useLibrary(s => s.searchError);
   const remove = useLibrary(s => s.remove);
   const load = useTranscripts(s => s.load);
   const rename = useTranscripts(s => s.rename);
@@ -103,6 +104,7 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
           >{sort === 'relevance' ? '↓ relevance' : '↓ date'}</button>
         )}
       </div>
+      {searchError && <div className="lib-search-error">{searchError}</div>}
       <AskPanel setRoute={setRoute} setTid={setTid} />
       {items.length === 0 ? (
         <div className="lib-empty">
