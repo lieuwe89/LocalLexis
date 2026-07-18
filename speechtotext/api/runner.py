@@ -22,13 +22,19 @@ from speechtotext.ingest.mic import record_to_file
 from speechtotext.models import ProgressEvent, Transcript
 from speechtotext.pipeline import CancelledError, Pipeline
 from speechtotext.api.workspace import get_workspace_id
+from speechtotext.rag import embedder as rag_embedder
 from speechtotext.summarize.prompt import (
     TranscriptTooLongError,
+    build_ask_messages,
     build_summary_messages,
     check_within_budget,
 )
 from speechtotext.summarize.provider import ProviderError, provider_from_config
 from speechtotext.writer import write_transcript
+
+
+# Number of top-scoring chunks retrieved for a library-wide ask job.
+ASK_TOP_K = 8
 
 
 def _max_concurrent_transcribe() -> int:
@@ -260,6 +266,67 @@ def run_summarize_job(
         except ProviderError as exc:
             emit(ErrorEvent(message=str(exc)))
         except TranscriptTooLongError as exc:
+            emit(ErrorEvent(message=str(exc)))
+        except Exception as exc:  # noqa: BLE001
+            emit(ErrorEvent(message=f"{type(exc).__name__}: {exc}"))
+        finally:
+            if _own_loop:
+                loop.call_soon_threadsafe(loop.stop)
+
+    threading.Thread(target=_work, daemon=True).start()
+    if _own_loop:
+        threading.Thread(target=lambda: (loop.run_forever(), loop.close()), daemon=True).start()
+
+
+def run_ask_job(
+    registry: JobRegistry,
+    job_id: str,
+    question: str,
+    db,
+    config_path: Path = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Answer a question over the whole library (RAG).
+
+    Retrieves the top chunks by embedding similarity, asks the configured
+    LLM provider, and stores {answer, sources} on the JobRecord.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        _own_loop = False
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        _own_loop = True
+
+    emit = _make_emit(loop, registry, job_id)
+
+    def _work() -> None:
+        try:
+            emit(StageEvent(stage="retrieve", percent=0.0))
+            qvec = rag_embedder.get_embedder().embed([question])[0]
+            chunks = db.top_chunks(qvec, rag_embedder.EMBED_MODEL, k=ASK_TOP_K)
+            if not chunks:
+                emit(ErrorEvent(message=(
+                    "nothing retrieved — the semantic index may still be "
+                    "building, or the library is empty"
+                )))
+                return
+            emit(StageEvent(stage="ask", percent=0.3))
+            cfg = load_config(config_path=config_path)
+            provider = _summarize_provider(cfg)
+            answer = provider.chat(build_ask_messages(question, chunks))
+            registry.get(job_id).result = {
+                "answer": answer,
+                "sources": [
+                    {
+                        "transcript_id": c["transcript_id"],
+                        "segment_index": c["first_segment"],
+                        "start": c["start"],
+                    }
+                    for c in chunks
+                ],
+            }
+            emit(CompleteEvent())
+        except (ProviderError, rag_embedder.EmbedderError) as exc:
             emit(ErrorEvent(message=str(exc)))
         except Exception as exc:  # noqa: BLE001
             emit(ErrorEvent(message=f"{type(exc).__name__}: {exc}"))

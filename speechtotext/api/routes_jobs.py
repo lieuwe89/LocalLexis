@@ -55,6 +55,7 @@ def _job_dict(rec) -> dict:
         "transcript_id": rec.transcript_id,
         "audio_path": rec.audio_path,
         "paths": rec.paths,
+        "result": rec.result,
     }
 
 

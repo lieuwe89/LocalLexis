@@ -40,6 +40,7 @@ class JobRecord:
     transcript_id: str | None = None
     audio_path: str | None = None
     paths: dict[str, str] = field(default_factory=dict)
+    result: dict | None = None
 
 
 class JobRegistry:

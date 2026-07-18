@@ -61,3 +61,27 @@ def build_summary_messages(doc: dict) -> list[dict]:
         {"role": "system", "content": _SYSTEM},
         {"role": "user", "content": head + "\n".join(lines)},
     ]
+
+
+def build_ask_messages(question: str, chunks: list[dict]) -> list[dict]:
+    """RAG prompt: numbered transcript excerpts + the user's question.
+
+    The API returns the source list separately, so [n] citations in the
+    answer are cosmetic — nothing parses them.
+    """
+    lines = []
+    for n, c in enumerate(chunks, 1):
+        ts = ""
+        if c.get("start") is not None:
+            ts = f" @ {int(c['start'] // 60)}:{int(c['start'] % 60):02d}"
+        lines.append(f"[{n}]{ts} {c['text']}")
+    excerpts = "\n\n".join(lines)
+    return [
+        {"role": "system", "content": (
+            "You answer questions about the user's personal transcript "
+            "library. Use ONLY the numbered excerpts provided. If they do "
+            "not contain the answer, say so plainly. Answer in the language "
+            "of the question. Cite excerpt numbers like [2] where relevant."
+        )},
+        {"role": "user", "content": f"Excerpts:\n\n{excerpts}\n\nQuestion: {question}"},
+    ]
