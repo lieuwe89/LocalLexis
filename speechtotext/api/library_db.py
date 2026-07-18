@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+import numpy as np
+
 from speechtotext.api.phonetics import WORD_RE, encode_text, encode_token
 from speechtotext.rag.chunker import build_chunks
 
@@ -44,6 +46,11 @@ SCHEMA_VERSION = 3
 # small negatives, so a large positive offset guarantees the ordering.
 _PHONETIC_RANK_OFFSET = 1000.0
 _HITS_PER_TRANSCRIPT = 5
+
+# Cosine floor for semantic hits: below this, chunks are noise, not matches.
+# ponytail: fixed heuristic threshold; make configurable only if users report
+# missing/irrelevant semantic results.
+_MIN_SIM = 0.25
 
 # Private-use Unicode sentinels for FTS5 snippet() match markers. We split on
 # these in Python and return plain-text parts so the frontend never receives
@@ -829,6 +836,128 @@ class LibraryDB:
             items.sort(key=lambda i: i.get("created_at") or "", reverse=True)
         else:
             items.sort(key=lambda i: rank_by_id.get(i["id"], 0.0))
+        return items[:limit]
+
+    # ── RAG: embeddings + vector search ───────────────────────────────────
+
+    def pending_chunks(self, model: str, limit: int = 256) -> list[tuple[int, str]]:
+        """Chunks lacking an embedding for `model` (or embedded by another)."""
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT c.id, c.text FROM chunks c
+                LEFT JOIN embeddings e ON e.chunk_id = c.id
+                WHERE e.chunk_id IS NULL OR e.model != ?
+                LIMIT ?
+                """,
+                (model, limit),
+            ).fetchall()
+        return [(r["id"], r["text"]) for r in rows]
+
+    def store_embeddings(
+        self, model: str, dim: int, rows: list[tuple[int, bytes]]
+    ) -> None:
+        """rows = [(chunk_id, float32-le vector bytes)]."""
+        with self._lock, self._conn:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO embeddings (chunk_id, model, dim, vector) "
+                "VALUES (?, ?, ?, ?)",
+                [(cid, model, dim, blob) for cid, blob in rows],
+            )
+            self._vec_cache = None
+
+    def _vec_matrix(self, model: str):
+        """(matrix, metas) over all embeddings for `model`, cached until a
+        chunk/embedding write. ponytail: full in-memory brute-force matrix;
+        switch to sqlite-vec if a library ever exceeds ~500k chunks."""
+        with self._lock:
+            cached = self._vec_cache
+            if cached is not None and cached[0] == model:
+                return cached[1], cached[2]
+            rows = self._conn.execute(
+                """
+                SELECT e.vector, c.transcript_id, c.first_segment,
+                       c.start_time, c.text
+                FROM embeddings e JOIN chunks c ON c.id = e.chunk_id
+                WHERE e.model = ?
+                """,
+                (model,),
+            ).fetchall()
+            if rows:
+                mat = np.vstack([
+                    np.frombuffer(r["vector"], dtype=np.float32) for r in rows
+                ])
+                metas = [
+                    {
+                        "transcript_id": r["transcript_id"],
+                        "first_segment": r["first_segment"],
+                        "start": r["start_time"],
+                        "text": r["text"],
+                    }
+                    for r in rows
+                ]
+            else:
+                mat = np.zeros((0, 1), dtype=np.float32)
+                metas = []
+            self._vec_cache = (model, mat, metas)
+            return mat, metas
+
+    def top_chunks(self, query_vec, model: str, k: int = 8) -> list[dict]:
+        """k best chunks by cosine similarity (vectors are unit-normalized)."""
+        mat, metas = self._vec_matrix(model)
+        if mat.shape[0] == 0:
+            return []
+        sims = mat @ np.asarray(query_vec, dtype=np.float32)
+        order = np.argsort(-sims)[:k]
+        return [
+            {**metas[i], "score": float(sims[i])}
+            for i in order
+            if sims[i] >= _MIN_SIM
+        ]
+
+    def semantic_search(self, query_vec, model: str, limit: int = 50) -> list[dict]:
+        """Chunk hits grouped per transcript, in the FTS search() hit format
+        (snippet_parts carry match=False: there is no lexical span to mark)."""
+        top = self.top_chunks(query_vec, model, k=limit * 4)
+        if not top:
+            return []
+        by_tid: dict[str, list[dict]] = {}
+        for c in top:
+            by_tid.setdefault(c["transcript_id"], []).append(c)
+
+        qmarks = ",".join("?" for _ in by_tid)
+        with self._lock:
+            rows = self._conn.execute(
+                f"""
+                SELECT id, json_path, audio_path, title, duration_seconds,
+                       language, speakers_count, created_at,
+                       models_asr, models_diarizer, error, origin
+                FROM transcripts WHERE id IN ({qmarks})
+                """,
+                list(by_tid),
+            ).fetchall()
+        items_by_id = {r["id"]: self._row_to_item(r) for r in rows}
+
+        items: list[dict] = []
+        for tid, chunks in by_tid.items():
+            item = items_by_id.get(tid)
+            if item is None:
+                continue  # row vanished between queries
+            hits = [
+                {
+                    "segment_index": c["first_segment"],
+                    "start": c["start"],
+                    "snippet_parts": [{"text": c["text"][:200], "match": False}],
+                    "score": c["score"],
+                }
+                for c in chunks  # already similarity-ordered from top_chunks
+            ]
+            item["hits"] = hits[:_HITS_PER_TRANSCRIPT]
+            item["total_hits"] = len(hits)
+            item["snippet_parts"] = hits[0]["snippet_parts"]
+            item["_best"] = hits[0]["score"]
+            items.append(item)
+        items.sort(key=lambda i: -i.pop("_best"))
         return items[:limit]
 
     def get_path(self, transcript_id: str) -> Path | None:
