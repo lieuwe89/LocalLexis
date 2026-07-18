@@ -73,6 +73,8 @@ def _is_lan_signed_route(path: str, method: str) -> bool:
         return True
     if path == "/jobs/upload" and method == "POST":
         return True
+    if path == "/transcripts/import/audio" and method == "POST":
+        return True
     return False
 
 

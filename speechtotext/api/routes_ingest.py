@@ -87,27 +87,31 @@ def sweep_partial_uploads(incoming_dir: Path) -> int:
             removed += 1
         except OSError:
             pass
+
+    # Abandoned import stages: client died between stage and commit.
+    cutoff = time.time() - 24 * 3600
+    for staged in incoming_dir.glob("*.import"):
+        try:
+            if staged.stat().st_mtime < cutoff:
+                staged.unlink()
+                removed += 1
+        except OSError:
+            pass
     return removed
 
 
-@router.post("/jobs/upload", status_code=202, response_model=UploadResponse)
-async def post_upload(
-    request: Request,
-    filename: str | None = Query(default=None, max_length=180),
-) -> UploadResponse:
-    """Accept a streaming signed audio upload, verify, dispatch transcription.
+async def _receive_signed_body(
+    request: Request, incoming: Path, max_bytes: int
+) -> tuple[Path, int]:
+    """Stream the signed request body to a temp file, verify its signature.
 
-    Flow:
-      1. Cheap header checks (Content-Length present + within limit).
-      2. Stream body through SHA-256 + tee to ``<incoming>/<random>.partial``,
-         capping at ``max_upload_bytes``.
-      3. Verify signature against the computed digest. On failure delete
-         temp + raise 401.
-      4. ``os.replace`` temp → final dest. Dispatch transcription.
+    Cheap header checks first (Content-Length present + within limit), then
+    stream the body through SHA-256 + tee to ``<incoming>/<random>.partial``,
+    capping at ``max_bytes``, then verify the device signature against the
+    computed digest. On any failure the temp file is deleted and an
+    HTTPException is raised. Returns ``(temp_path, bytes_seen)`` on success —
+    caller is responsible for renaming/cleaning up the temp file.
     """
-    max_bytes = int(
-        getattr(request.app.state, "max_upload_bytes", DEFAULT_MAX_UPLOAD_BYTES)
-    )
     raw_length = request.headers.get("content-length")
     if raw_length is None:
         raise HTTPException(status_code=411, detail="Content-Length required")
@@ -123,9 +127,6 @@ async def post_upload(
             detail=f"audio upload exceeds {max_bytes} byte limit",
         )
 
-    safe_name = _safe_filename(filename)
-    incoming = _incoming_dir(request)
-    incoming.mkdir(parents=True, exist_ok=True)
     temp_path = incoming / f"{secrets.token_hex(8)}.partial"
 
     hasher = hashlib.sha256()
@@ -165,6 +166,33 @@ async def post_upload(
         raise
     _ = device_id  # reserved for future per-device routing
 
+    return temp_path, bytes_seen
+
+
+@router.post("/jobs/upload", status_code=202, response_model=UploadResponse)
+async def post_upload(
+    request: Request,
+    filename: str | None = Query(default=None, max_length=180),
+) -> UploadResponse:
+    """Accept a streaming signed audio upload, verify, dispatch transcription.
+
+    Flow:
+      1. Cheap header checks (Content-Length present + within limit).
+      2. Stream body through SHA-256 + tee to ``<incoming>/<random>.partial``,
+         capping at ``max_upload_bytes``.
+      3. Verify signature against the computed digest. On failure delete
+         temp + raise 401.
+      4. ``os.replace`` temp → final dest. Dispatch transcription.
+    """
+    max_bytes = int(
+        getattr(request.app.state, "max_upload_bytes", DEFAULT_MAX_UPLOAD_BYTES)
+    )
+    safe_name = _safe_filename(filename)
+    incoming = _incoming_dir(request)
+    incoming.mkdir(parents=True, exist_ok=True)
+
+    temp_path, bytes_seen = await _receive_signed_body(request, incoming, max_bytes)
+
     audio_path = _unique_upload_path(incoming, safe_name)
     try:
         os.replace(temp_path, audio_path)
@@ -192,3 +220,32 @@ async def post_upload(
         ) from exc
 
     return UploadResponse(job_id=job_id, bytes_received=bytes_seen)
+
+
+@router.post("/transcripts/import/audio")
+async def post_import_audio(
+    request: Request,
+    filename: str | None = Query(default=None, max_length=180),
+) -> dict:
+    """Stage audio for a transcript import (no transcription job).
+
+    The staged file is named ``<token>.import``: never indexed by the
+    library walker (not ``.json``) and recognizable for stale-cleanup at
+    startup.
+    """
+    max_bytes = int(
+        getattr(request.app.state, "max_upload_bytes", DEFAULT_MAX_UPLOAD_BYTES)
+    )
+    _safe_filename(filename)  # validates; the name itself is recorded at commit time
+    incoming = _incoming_dir(request)
+    incoming.mkdir(parents=True, exist_ok=True)
+    temp_path, bytes_seen = await _receive_signed_body(request, incoming, max_bytes)
+    ref = f"{secrets.token_hex(8)}.import"
+    try:
+        os.replace(temp_path, incoming / ref)
+    except OSError as exc:
+        _unlink_quietly(temp_path)
+        raise HTTPException(
+            status_code=500, detail=f"failed to stage audio: {exc}"
+        ) from exc
+    return {"audio_ref": ref, "bytes_received": bytes_seen}
