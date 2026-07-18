@@ -12,11 +12,14 @@ interface State {
   searching: boolean;
   /** Phonetic + typo matching for searches. */
   fuzzy: boolean;
+  /** Meaning-based (embedding) matching for searches. */
+  semantic: boolean;
   /** Result ordering while a query is active. */
   sort: 'relevance' | 'date';
   refresh: () => Promise<void>;
   search: (q: string) => Promise<void>;
   setFuzzy: (f: boolean) => void;
+  setSemantic: (v: boolean) => void;
   setSort: (s: 'relevance' | 'date') => void;
   remove: (id: string) => Promise<void>;
 }
@@ -33,6 +36,7 @@ export const useLibrary = create<State>((set, get) => ({
   query: '',
   searching: false,
   fuzzy: false,
+  semantic: false,
   sort: 'relevance',
   refresh: async () => {
     const rows = await api<TranscriptListItem[]>('/transcripts');
@@ -50,9 +54,10 @@ export const useLibrary = create<State>((set, get) => ({
       return;
     }
     set({ searching: true });
-    const { fuzzy, sort } = get();
+    const { fuzzy, semantic, sort } = get();
     let url = `/transcripts?q=${encodeURIComponent(trimmed)}`;
     if (fuzzy) url += '&fuzzy=1';
+    if (semantic) url += '&semantic=1';
     if (sort !== 'relevance') url += `&sort=${sort}`;
     try {
       const rows = await api<TranscriptListItem[]>(url);
@@ -64,6 +69,11 @@ export const useLibrary = create<State>((set, get) => ({
   },
   setFuzzy: (f: boolean) => {
     set({ fuzzy: f });
+    const q = get().query;
+    if (q.trim()) void get().search(q);
+  },
+  setSemantic: (v: boolean) => {
+    set({ semantic: v });
     const q = get().query;
     if (q.trim()) void get().search(q);
   },

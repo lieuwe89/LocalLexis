@@ -41,6 +41,8 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
   const rename = useTranscripts(s => s.rename);
   const fuzzy = useLibrary(s => s.fuzzy);
   const setFuzzy = useLibrary(s => s.setFuzzy);
+  const semantic = useLibrary(s => s.semantic);
+  const setSemantic = useLibrary(s => s.setSemantic);
   const sort = useLibrary(s => s.sort);
   const setSort = useLibrary(s => s.setSort);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -84,6 +86,13 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
           title="Fuzzy matching — also finds words that sound alike"
           onClick={() => setFuzzy(!fuzzy)}
         >~ fuzzy</button>
+        <button
+          className={'lib-toggle' + (semantic ? ' on' : '')}
+          aria-label="Semantic search"
+          aria-pressed={semantic}
+          title="Semantic search — match by meaning instead of exact words"
+          onClick={() => setSemantic(!semantic)}
+        >≈ meaning</button>
         {isSearching && (
           <button
             className="lib-toggle"
@@ -171,8 +180,11 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
                           // click can't record a mismatched find query.
                           usePendingFind.getState().set({
                             tid: i.id,
-                            query: useLibrary.getState().query.trim(),
-                            fuzzy,
+                            // Semantic hits have no lexical query — empty query
+                            // makes the transcript view fall back to a plain
+                            // segment scroll.
+                            query: semantic ? '' : useLibrary.getState().query.trim(),
+                            fuzzy: semantic ? false : fuzzy,
                             segmentIndex: h.segment_index,
                           });
                           try { await load(i.id); setTid(i.id); setRoute('complete'); } catch {}

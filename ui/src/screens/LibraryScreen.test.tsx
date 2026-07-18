@@ -21,7 +21,7 @@ let refreshSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   mocks.api.mockReset().mockResolvedValue([]);
   useLibrary.setState({
-    items: [], all: [], query: '', searching: false, fuzzy: false, sort: 'relevance',
+    items: [], all: [], query: '', searching: false, fuzzy: false, semantic: false, sort: 'relevance',
   });
   useTranscripts.setState({ byId: {} });
   usePendingFind.setState({ pending: null });
@@ -186,6 +186,20 @@ describe('library segment hits', () => {
     expect(setRoute).toHaveBeenCalledWith('complete');
     expect(usePendingFind.getState().pending).toMatchObject({
       tid: 't1', query: 'budget', fuzzy: true, segmentIndex: 2,
+    });
+  });
+
+  it('clicking a hit with semantic on records an empty pendingFind query', async () => {
+    const setTid = vi.fn();
+    // Semantic hits aren't lexical matches — the find bar would show a
+    // non-matching query with 0/0, so the handler must blank it out and
+    // let the transcript view fall back to a plain segment scroll.
+    useLibrary.setState({ items: [hitItem], all: [hitItem], query: 'budget', fuzzy: true, semantic: true });
+    render(<LibraryScreen setRoute={vi.fn()} setTid={setTid} />);
+    fireEvent.click(screen.getAllByRole('button', { name: /Jump to match/ })[0]);
+    await waitFor(() => expect(setTid).toHaveBeenCalledWith('t1'));
+    expect(usePendingFind.getState().pending).toMatchObject({
+      tid: 't1', query: '', fuzzy: false, segmentIndex: 2,
     });
   });
 

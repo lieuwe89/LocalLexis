@@ -35,6 +35,19 @@ describe('useLibrary search params', () => {
     expect(mocks.api).not.toHaveBeenCalled();
   });
 
+  it('setSemantic re-runs the current search with semantic=1', async () => {
+    await useLibrary.getState().search('begroeting');
+    mocks.api.mockClear();
+    useLibrary.getState().setSemantic(true);
+    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/transcripts?q=begroeting&semantic=1'));
+  });
+
+  it('search omits semantic param when toggle is off', async () => {
+    useLibrary.setState({ semantic: false });
+    await useLibrary.getState().search('hallo');
+    expect(mocks.api).toHaveBeenCalledWith('/transcripts?q=hallo');
+  });
+
   it('a stale response cannot overwrite a newer re-search with the same query text', async () => {
     // Two requests share the query text 'hello' (fuzzy toggle re-searches),
     // so only a request-generation guard can tell them apart.
