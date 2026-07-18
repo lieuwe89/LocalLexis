@@ -39,6 +39,7 @@ api = [
     "cryptography>=42",
     "qrcode>=7.4",
     "Metaphone>=0.6",
+    "sentence-transformers>=3.0",
 ]
 packaging = [
     "pyinstaller>=6.0",
