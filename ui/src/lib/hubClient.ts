@@ -12,6 +12,8 @@ export interface HubClientStatus {
   pending_uploads?: number;
   last_error?: string | null;
   last_sync_at?: number | null;
+  migrated_at?: number | null;
+  offline_capture?: string;
 }
 
 export async function hubStatus(): Promise<HubClientStatus> {
@@ -34,4 +36,8 @@ export async function joinHub(
 
 export async function leaveHub(): Promise<HubClientStatus> {
   return api<HubClientStatus>('/client/hub/leave', { method: 'POST' });
+}
+
+export async function startMigration(): Promise<{ job_id: string }> {
+  return api<{ job_id: string }>('/client/hub/migrate', { method: 'POST' });
 }

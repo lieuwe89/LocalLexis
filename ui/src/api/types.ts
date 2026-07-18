@@ -11,6 +11,11 @@ export interface AskResult {
   sources: AskSource[];
 }
 
+export interface MigrateResult {
+  migrated: string[];
+  failed: { id: string; error: string }[];
+}
+
 export interface JobRecord {
   id: string;
   kind: string;
@@ -21,7 +26,7 @@ export interface JobRecord {
   transcript_id: string | null;
   audio_path: string | null;
   paths: Record<string, string>;
-  result?: AskResult | null;
+  result?: AskResult | MigrateResult | null;
 }
 
 export type SseEvent =

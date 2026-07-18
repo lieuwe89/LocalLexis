@@ -9,10 +9,11 @@ import {
   type RecorderProvisioning,
 } from '../lib/recorderProvisioning';
 import { QRCodeSVG } from 'qrcode.react';
-import { hubStatus, joinHub, leaveHub, type HubClientStatus } from '../lib/hubClient';
+import { hubStatus, joinHub, leaveHub, startMigration, type HubClientStatus } from '../lib/hubClient';
 import { SettingsForm, Field } from './settings/SettingsForm';
 import { SummarizeSettings } from './settings/SummarizeSettings';
 import { TrashSection } from './settings/TrashSection';
+import type { JobRecord, MigrateResult } from '../api/types';
 
 interface HubState {
   enabled: boolean;
@@ -39,7 +40,7 @@ interface RecorderBleDevice {
   rssi: number | null;
 }
 
-export function SettingsScreen() {
+export function SettingsScreen({ pollMs = 1500 }: { pollMs?: number } = {}) {
   const [hub, setHub] = useState<HubState | null>(null);
   const [hubBusy, setHubBusy] = useState(false);
   const [devices, setDevices] = useState<PairedDevice[]>([]);
@@ -60,6 +61,9 @@ export function SettingsScreen() {
   const [joinDeviceName, setJoinDeviceName] = useState('');
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [migrateBusy, setMigrateBusy] = useState(false);
+  const [migrateError, setMigrateError] = useState<string | null>(null);
+  const [migrateResult, setMigrateResult] = useState<MigrateResult | null>(null);
 
   // Load hub state once on mount. Failure is silent — older sidecars
   // without the hub_state command leave `hub` null and the UI hides
@@ -128,6 +132,31 @@ export function SettingsScreen() {
       setClientHub(await hubStatus());
     } finally {
       setJoinBusy(false);
+    }
+  };
+
+  const doMigrate = async () => {
+    const ok = window.confirm(
+      'Migrate all local transcripts to the hub and move the originals to trash?\n\n' +
+      'You can restore them from Settings → Trash.',
+    );
+    if (!ok) return;
+    setMigrateBusy(true);
+    setMigrateError(null);
+    setMigrateResult(null);
+    try {
+      const { job_id } = await startMigration();
+      for (;;) {
+        const rec = await api<JobRecord>(`/jobs/${job_id}`);
+        if (rec.status === 'complete') { setMigrateResult((rec.result as MigrateResult) ?? null); break; }
+        if (rec.status === 'failed') { setMigrateError(rec.error ?? 'migration failed'); break; }
+        await new Promise(r => setTimeout(r, pollMs));
+      }
+      setClientHub(await hubStatus());
+    } catch (e) {
+      setMigrateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMigrateBusy(false);
     }
   };
 
@@ -468,6 +497,46 @@ export function SettingsScreen() {
             <button type="button" onClick={doLeaveHub} disabled={joinBusy}>
               Leave hub
             </button>
+
+            <div className="hub-migrate" style={{ marginTop: '1.25rem' }}>
+              <h3 style={{ margin: '0 0 0.25rem' }}>Migrate library to hub</h3>
+              {clientHub.migrated_at ? (
+                <p style={{ color: 'var(--ink-muted)' }}>
+                  Library migrated on{' '}
+                  {new Date(clientHub.migrated_at * 1000).toLocaleDateString()}
+                </p>
+              ) : (
+                <>
+                  <p style={{ color: 'var(--ink-muted)', marginTop: 0 }}>
+                    Send all locally recorded transcripts to the hub, one time.
+                    Originals are archived to trash after the hub copy is verified.
+                  </p>
+                  <button type="button" onClick={doMigrate} disabled={migrateBusy}>
+                    {migrateBusy ? 'Migrating…' : 'Migrate library to hub'}
+                  </button>
+                  {migrateError && (
+                    <p role="alert" style={{ color: 'var(--ink-error, crimson)' }}>{migrateError}</p>
+                  )}
+                  {migrateResult && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <p>{migrateResult.migrated.length} transcripts migrated</p>
+                      {migrateResult.failed.length > 0 && (
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {migrateResult.failed.map((f) => (
+                            <li
+                              key={f.id}
+                              style={{ whiteSpace: 'normal', overflowWrap: 'break-word' }}
+                            >
+                              {f.id}: {f.error}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         ) : (
           <div>

@@ -36,7 +36,7 @@ export function AskPanel({ setRoute, setTid, pollMs = 1500 }: Props) {
       });
       for (;;) {
         const rec = await api<JobRecord>(`/jobs/${job_id}`);
-        if (rec.status === 'complete') { setResult(rec.result ?? null); break; }
+        if (rec.status === 'complete') { setResult((rec.result as AskResult) ?? null); break; }
         if (rec.status === 'failed') { setError(rec.error ?? 'ask failed'); break; }
         await new Promise(r => setTimeout(r, pollMs));
       }
