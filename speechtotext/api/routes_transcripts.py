@@ -27,6 +27,7 @@ from speechtotext.api.workspace import (
     get_lamport,
     get_workspace_id,
 )
+from speechtotext.rag import embedder as rag_embedder
 from speechtotext.relabel import relabel
 
 router = APIRouter()
@@ -121,8 +122,16 @@ def list_transcripts(
     request: Request,
     q: str | None = Query(default=None, description="full-text search query"),
     limit: int = Query(default=200, ge=1, le=1000),
-    fuzzy: bool = Query(default=False, description="also match phonetically"),
-    sort: str = Query(default="relevance", pattern="^(relevance|date)$"),
+    fuzzy: bool = Query(
+        default=False,
+        description="also match phonetically; ignored when semantic=1",
+    ),
+    sort: str = Query(
+        default="relevance",
+        pattern="^(relevance|date)$",
+        description="result ordering; ignored when semantic=1",
+    ),
+    semantic: bool = Query(default=False, description="match by meaning (embeddings)"),
 ) -> list[dict]:
     db = request.app.state.library_db
     # Reconcile before responding so the user sees rows matching disk. The
@@ -131,6 +140,13 @@ def list_transcripts(
     # Snapshot the dir set (atomic C-level copy) so a background .add() from
     # _on_complete_dir can't grow it mid-iteration inside reconcile.
     request.app.state.library_reconciler.reconcile(set(request.app.state.library_dirs))
+    if q and semantic:
+        # First call may block for the one-time model download (see rag/embedder.py).
+        try:
+            qvec = rag_embedder.get_embedder().embed([q])[0]
+        except rag_embedder.EmbedderError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        return db.semantic_search(qvec, rag_embedder.EMBED_MODEL, limit=limit)
     if q:
         return db.search(q, limit=limit, fuzzy=fuzzy, sort=sort)
     return db.list(limit=limit)
