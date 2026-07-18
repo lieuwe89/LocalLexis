@@ -3,6 +3,7 @@ import { Icon } from '../primitives/Icon';
 import { useLibrary } from '../stores/library';
 import { useTranscripts } from '../stores/transcripts';
 import { usePendingFind } from '../stores/pendingFind';
+import { AskPanel } from './AskPanel';
 import type { Route } from '../types/route';
 
 interface Props {
@@ -102,6 +103,7 @@ export function LibraryScreen({ setRoute, setTid }: Props) {
           >{sort === 'relevance' ? '↓ relevance' : '↓ date'}</button>
         )}
       </div>
+      <AskPanel setRoute={setRoute} setTid={setTid} />
       {items.length === 0 ? (
         <div className="lib-empty">
           {libraryEmpty

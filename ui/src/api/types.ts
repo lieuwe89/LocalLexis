@@ -1,5 +1,16 @@
 export type JobStatus = 'pending' | 'running' | 'complete' | 'failed';
 
+export interface AskSource {
+  transcript_id: string;
+  segment_index: number;
+  start: number | null;
+}
+
+export interface AskResult {
+  answer: string;
+  sources: AskSource[];
+}
+
 export interface JobRecord {
   id: string;
   kind: string;
@@ -10,6 +21,7 @@ export interface JobRecord {
   transcript_id: string | null;
   audio_path: string | null;
   paths: Record<string, string>;
+  result?: AskResult | null;
 }
 
 export type SseEvent =

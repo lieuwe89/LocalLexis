@@ -1151,6 +1151,25 @@ input, textarea { font-family: inherit; color: inherit; }
 }
 .rename-input:focus { border-color: var(--accent); }
 
+.ask-panel { display: flex; flex-direction: column; gap: 8px; }
+.ask-input {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-elev); border: 0.5px solid var(--line); border-radius: 6px;
+  padding: 8px 12px;
+}
+.ask-input input { flex: 1; background: transparent; border: none; outline: none; color: var(--ink); font-family: var(--sans); font-size: 13px; }
+.ask-input button {
+  font-family: var(--mono); font-size: 11px; white-space: nowrap;
+  background: transparent; border: 0.5px solid var(--line); border-radius: 999px;
+  color: var(--ink-dim); padding: 4px 10px; cursor: pointer;
+}
+.ask-input button:disabled { opacity: 0.5; cursor: default; }
+.ask-input button:not(:disabled):hover { color: var(--accent); border-color: var(--accent-line); background: var(--accent-faint); }
+.ask-error { color: var(--danger); font-size: 12px; }
+/* Answer text must wrap in full — never truncate (user requirement). */
+.ask-answer { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; font-family: var(--serif); font-size: 14px; line-height: 1.6; color: var(--ink); }
+.ask-sources { display: flex; gap: 6px; flex-wrap: wrap; }
+
 /* ─────────── Watch folder screen ─────────── */
 .watch { max-width: 920px; margin: 0 auto; padding: 36px 40px 80px; display: flex; flex-direction: column; gap: 22px; }
 .watch-control { display: flex; gap: 14px; align-items: center; }
