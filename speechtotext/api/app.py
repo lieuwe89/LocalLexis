@@ -16,6 +16,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from speechtotext import __version__
 from speechtotext.api.auth import NonceCache
 from speechtotext.api.devices import DeviceRegistry
+from speechtotext.api.embed_worker import EmbedWorker
 from speechtotext.api.jobs import JobRegistry
 from speechtotext.api.library_db import LibraryDB
 from speechtotext.api.pairing import PairingTokenStore
@@ -138,6 +139,7 @@ async def _lifespan(app: FastAPI):
         args=(list(app.state.library_dirs),),
         daemon=True,
     ).start()
+    app.state.embed_worker.start()
     # Streaming /jobs/upload writes a <random>.partial scratch file
     # while it hashes; a crash mid-stream would leak it indefinitely.
     removed = sweep_partial_uploads(Path(app.state.incoming_dir))
@@ -152,6 +154,7 @@ async def _lifespan(app: FastAPI):
     app.state.hub_runtime.start()
     yield
     app.state.hub_runtime.stop()
+    app.state.embed_worker.stop()
 
 
 def create_app(
@@ -182,6 +185,7 @@ def create_app(
     # Gates the library walk behind a per-dir mtime check so list/sync
     # requests don't stat every transcript file when nothing changed.
     app.state.library_reconciler = LibraryReconciler(app.state.library_db)
+    app.state.embed_worker = EmbedWorker(app.state.library_db)
     app.state.pairing_tokens = PairingTokenStore()
     app.state.device_registry = DeviceRegistry(devices_db_path)
     # Replay defense for device-signed requests (see auth.verify_device_signature).
