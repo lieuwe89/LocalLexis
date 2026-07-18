@@ -637,15 +637,14 @@ class LibraryDB:
             self._conn.execute(
                 "INSERT OR IGNORE INTO library_dirs (path, registered_at) "
                 "VALUES (?, ?)",
-                (str(Path(dir_path).resolve()), _now_iso()),
+                (str(dir_path.resolve()), _now_iso()),
             )
 
-    def known_dirs(self, *, prune: bool = True) -> list[Path]:
+    def known_dirs(self) -> list[Path]:
         """Return previously registered dirs that still exist on disk.
 
-        With prune=True (the default, used at startup) rows whose directory
-        is gone are deleted — a renamed or removed dir should not be
-        rescanned forever.
+        Rows whose directory is gone are pruned — a renamed or removed dir
+        should not be rescanned forever.
         """
         dirs: list[Path] = []
         with self._lock, self._conn:
@@ -656,7 +655,7 @@ class LibraryDB:
                 p = Path(r["path"])
                 if p.is_dir():
                     dirs.append(p)
-                elif prune:
+                else:
                     self._conn.execute(
                         "DELETE FROM library_dirs WHERE path=?", (r["path"],)
                     )

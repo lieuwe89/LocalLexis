@@ -109,7 +109,7 @@ class BearerAuthMiddleware:
             return
         # The web UI's own assets (login page + JS) must load before the user
         # has a token; the API calls they make stay bearer-gated.
-        if method == "GET" and path.startswith("/app"):
+        if method == "GET" and (path == "/" or path.startswith("/app")):
             await self.app(scope, receive, send)
             return
         auth = ""
@@ -224,8 +224,7 @@ def create_app(
     # survives a restart and transcripts elsewhere drop out of the library
     # whenever the DB index is rebuilt. known_dirs() prunes rows whose
     # directory no longer exists.
-    for _known_dir in app.state.library_db.known_dirs():
-        app.state.library_dirs.add(_known_dir)
+    app.state.library_dirs.update(app.state.library_db.known_dirs())
 
     def _on_complete_dir(dir_path: Path) -> None:
         app.state.library_dirs.add(dir_path)
@@ -313,6 +312,13 @@ def create_app(
 
     if serve_webui and WEBUI_DIR.is_dir():
         from fastapi.staticfiles import StaticFiles
+        from fastapi.responses import RedirectResponse
+
+        # Bare-domain visits land on the UI instead of a 401.
+        @app.get("/", include_in_schema=False)
+        def _root() -> RedirectResponse:
+            return RedirectResponse("/app/")
+
         # html=True serves index.html for /app/ and unmatched sub-paths (SPA).
         app.mount("/app", StaticFiles(directory=str(WEBUI_DIR), html=True), name="webui")
 

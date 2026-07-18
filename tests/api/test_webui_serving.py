@@ -41,3 +41,13 @@ def test_webui_assets_reachable_without_token(tmp_path, monkeypatch):
     c = TestClient(app)
     r = c.get("/app/")  # no Authorization header
     assert r.status_code == 200
+
+
+def test_root_redirects_to_webui_without_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALLEXIS_API_TOKEN", "secret")
+    _seed_webui(tmp_path, monkeypatch)
+    app = create_app(serve_webui=True)
+    c = TestClient(app)
+    r = c.get("/", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "/app/"

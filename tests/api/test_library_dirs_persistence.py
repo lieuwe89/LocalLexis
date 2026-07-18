@@ -40,13 +40,6 @@ def db(tmp_path: Path) -> LibraryDB:
     return LibraryDB(tmp_path / "library.db")
 
 
-def test_register_dir_round_trips(db: LibraryDB, tmp_path: Path):
-    d = tmp_path / "recordings"
-    d.mkdir()
-    db.register_dir(d)
-    assert db.known_dirs() == [d.resolve()]
-
-
 def test_register_dir_dedupes(db: LibraryDB, tmp_path: Path):
     d = tmp_path / "recordings"
     d.mkdir()
@@ -83,16 +76,6 @@ def test_known_dirs_prunes_missing_dirs(db: LibraryDB, tmp_path: Path):
     # The pruned row is deleted, not just filtered out of the return value.
     rows = db._conn.execute("SELECT path FROM library_dirs").fetchall()
     assert [r["path"] for r in rows] == [str(kept.resolve())]
-
-
-def test_known_dirs_no_prune_keeps_rows(db: LibraryDB, tmp_path: Path):
-    gone = tmp_path / "gone"
-    gone.mkdir()
-    db.register_dir(gone)
-    gone.rmdir()
-    assert db.known_dirs(prune=False) == []
-    rows = db._conn.execute("SELECT path FROM library_dirs").fetchall()
-    assert len(rows) == 1
 
 
 def test_registered_dirs_survive_schema_rebuild(tmp_path: Path):
