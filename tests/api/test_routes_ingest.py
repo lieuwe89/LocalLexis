@@ -52,7 +52,9 @@ def test_signed_whole_file_upload_stores_audio_and_dispatches_job(
     assert payload["bytes_received"] == len(body)
     assert "audio_path" not in payload
 
-    audio_path = Path(app.state.jobs.get(payload["job_id"]).audio_path)
+    rec = app.state.jobs.get(payload["job_id"])
+    assert rec.device_id == device_id
+    audio_path = Path(rec.audio_path)
     assert audio_path.name.endswith("-field-note.wav")
     assert audio_path.read_bytes() == body
     assert audio_path.parent.name == "incoming"

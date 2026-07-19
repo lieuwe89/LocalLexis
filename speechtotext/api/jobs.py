@@ -42,6 +42,9 @@ class JobRecord:
     paths: dict[str, str] = field(default_factory=dict)
     result: dict | None = None
     remote_job_id: str | None = None
+    # Device that created this job (None = local/admin/anonymous origin).
+    # A device-signed GET /jobs/{id} only sees jobs it owns or unowned ones.
+    device_id: str | None = None
 
 
 class JobRegistry:
@@ -53,9 +56,16 @@ class JobRegistry:
     def set_on_complete_dir(self, cb) -> None:
         self._on_complete_dir = cb
 
-    def create(self, kind: str, audio_path: str | None = None) -> str:
+    def create(
+        self,
+        kind: str,
+        audio_path: str | None = None,
+        device_id: str | None = None,
+    ) -> str:
         job_id = uuid.uuid4().hex
-        self._jobs[job_id] = JobRecord(id=job_id, kind=kind, audio_path=audio_path)
+        self._jobs[job_id] = JobRecord(
+            id=job_id, kind=kind, audio_path=audio_path, device_id=device_id
+        )
         self._queues[job_id] = []
         self._prune()
         return job_id
