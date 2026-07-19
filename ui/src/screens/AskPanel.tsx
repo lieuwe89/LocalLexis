@@ -20,6 +20,7 @@ function fmtTs(secs: number) {
 export function AskPanel({ setRoute, setTid, pollMs = 1500 }: Props) {
   const [question, setQuestion] = useState('');
   const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AskResult | null>(null);
   const load = useTranscripts(s => s.load);
@@ -36,6 +37,7 @@ export function AskPanel({ setRoute, setTid, pollMs = 1500 }: Props) {
       });
       for (;;) {
         const rec = await api<JobRecord>(`/jobs/${job_id}`);
+        setStage(rec.stage ?? null);
         if (rec.status === 'complete') { setResult((rec.result as AskResult) ?? null); break; }
         if (rec.status === 'failed') { setError(rec.error ?? 'ask failed'); break; }
         await new Promise(r => setTimeout(r, pollMs));
@@ -43,7 +45,7 @@ export function AskPanel({ setRoute, setTid, pollMs = 1500 }: Props) {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      setBusy(false); setStage(null);
     }
   };
 
@@ -60,6 +62,14 @@ export function AskPanel({ setRoute, setTid, pollMs = 1500 }: Props) {
           {busy ? 'Asking…' : 'Ask'}
         </button>
       </div>
+      {busy && (
+        <div className="ask-progress" role="status">
+          <span className="ask-spinner" aria-hidden="true" />
+          {stage === 'retrieve' ? 'Searching your library…'
+            : stage === 'ask' || stage === 'ask@hub' ? 'Writing answer…'
+            : 'Working…'}
+        </div>
+      )}
       {error && <div className="ask-error">{error}</div>}
       {result && (
         <div className="ask-result">

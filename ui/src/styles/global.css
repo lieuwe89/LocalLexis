@@ -1165,6 +1165,8 @@ input, textarea { font-family: inherit; color: inherit; }
 }
 .ask-input button:disabled { opacity: 0.5; cursor: default; }
 .ask-input button:not(:disabled):hover { color: var(--accent); border-color: var(--accent-line); background: var(--accent-faint); }
+.ask-progress { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
+.ask-spinner { width: 12px; height: 12px; border: 1.5px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%; animation: lib-spin 0.8s linear infinite; }
 .ask-error { color: var(--danger); font-size: 12px; }
 .lib-search-error { color: var(--danger); font-size: 12px; }
 /* Answer text must wrap in full — never truncate (user requirement). */

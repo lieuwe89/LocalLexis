@@ -46,4 +46,54 @@ describe('AskPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /ask/i }));
     await waitFor(() => expect(screen.getByText(/no provider/)).toBeInTheDocument());
   });
+
+  it('shows stage progress text while polling, then clears it on completion', async () => {
+    // Deferred promises give us explicit control over when each poll
+    // resolves, so we can assert on the transient stage text between
+    // ticks without racing real timers.
+    let resolveRetrieve!: (v: unknown) => void;
+    let resolveAsk!: (v: unknown) => void;
+    let resolveComplete!: (v: unknown) => void;
+    vi.mocked(api)
+      .mockResolvedValueOnce({ job_id: 'j1' })
+      .mockImplementationOnce(() => new Promise(r => { resolveRetrieve = r; }))
+      .mockImplementationOnce(() => new Promise(r => { resolveAsk = r; }))
+      .mockImplementationOnce(() => new Promise(r => { resolveComplete = r; }));
+
+    render(<AskPanel setRoute={() => {}} setTid={() => {}} pollMs={1} />);
+    fireEvent.change(screen.getByPlaceholderText(/ask your library/i), { target: { value: 'x' } });
+    fireEvent.click(screen.getByRole('button', { name: /ask/i }));
+
+    await waitFor(() => expect(resolveRetrieve).toBeDefined());
+    resolveRetrieve({ id: 'j1', status: 'running', stage: 'retrieve' });
+    await waitFor(() => expect(screen.getByText('Searching your library…')).toBeInTheDocument());
+    expect(screen.queryByText('Writing answer…')).not.toBeInTheDocument();
+
+    await waitFor(() => expect(resolveAsk).toBeDefined());
+    resolveAsk({ id: 'j1', status: 'running', stage: 'ask' });
+    await waitFor(() => expect(screen.getByText('Writing answer…')).toBeInTheDocument());
+    expect(screen.queryByText('Searching your library…')).not.toBeInTheDocument();
+
+    await waitFor(() => expect(resolveComplete).toBeDefined());
+    resolveComplete({ id: 'j1', status: 'complete', result: { answer: 'ok', sources: [] } });
+    await waitFor(() => expect(screen.getByText('ok')).toBeInTheDocument());
+    expect(screen.queryByText('Searching your library…')).not.toBeInTheDocument();
+    expect(screen.queryByText('Writing answer…')).not.toBeInTheDocument();
+  });
+
+  it('falls back to a generic label for an unrecognized stage', async () => {
+    let resolveWeird!: (v: unknown) => void;
+    vi.mocked(api)
+      .mockResolvedValueOnce({ job_id: 'j1' })
+      .mockImplementationOnce(() => new Promise(r => { resolveWeird = r; }))
+      .mockResolvedValueOnce({ id: 'j1', status: 'complete', result: { answer: 'ok', sources: [] } });
+
+    render(<AskPanel setRoute={() => {}} setTid={() => {}} pollMs={1} />);
+    fireEvent.change(screen.getByPlaceholderText(/ask your library/i), { target: { value: 'x' } });
+    fireEvent.click(screen.getByRole('button', { name: /ask/i }));
+
+    await waitFor(() => expect(resolveWeird).toBeDefined());
+    resolveWeird({ id: 'j1', status: 'running', stage: 'some_future_stage' });
+    await waitFor(() => expect(screen.getByText('Working…')).toBeInTheDocument());
+  });
 });
