@@ -154,6 +154,70 @@ def test_authless_mode_still_anonymous(anon, noop_ask):
     assert client.get(f"/jobs/{job_id}").status_code == 200
 
 
+# ── device-scoped job access ───────────────────────────────────────────────
+
+
+@pytest.fixture
+def paired_two(tmp_path, monkeypatch):
+    """App with TWO paired devices and a bearer token configured."""
+    monkeypatch.delenv("LOCALLEXIS_API_TOKEN", raising=False)
+    app = create_app(
+        library_db_path=tmp_path / "library.db",
+        devices_db_path=tmp_path / "devices.db",
+    )
+    client = TestClient(app)
+    sk_a, dev_a = _pair_device(client)
+    sk_b, dev_b = _pair_device(client)
+    monkeypatch.setenv("LOCALLEXIS_API_TOKEN", TOKEN)
+    return client, app, (sk_a, dev_a), (sk_b, dev_b)
+
+
+def test_device_cannot_read_other_devices_job(paired_two):
+    """A job owned by device A is invisible (404) to device B, but the
+    owner and the admin bearer both still read it."""
+    client, app, (sk_a, dev_a), (sk_b, dev_b) = paired_two
+    job_id = app.state.jobs.create(kind="ask", device_id=dev_a)
+    path = f"/jobs/{job_id}"
+    r = client.get(path, headers=signed_headers(sk_a, dev_a, "GET", path))
+    assert r.status_code == 200, r.text
+    r = client.get(path, headers=signed_headers(sk_b, dev_b, "GET", path))
+    assert r.status_code == 404, r.text
+    assert client.get(path, headers=BEARER).status_code == 200
+
+
+def test_device_can_read_unowned_job(paired):
+    """Jobs with no device_id (local/admin origin) stay readable by any
+    paired device — backward-compat with pre-ownership records."""
+    client, app, sk, dev_id = paired
+    job_id = app.state.jobs.create(kind="transcribe")
+    path = f"/jobs/{job_id}"
+    r = client.get(path, headers=signed_headers(sk, dev_id, "GET", path))
+    assert r.status_code == 200, r.text
+
+
+def test_post_ask_stamps_device_owner(paired, noop_ask):
+    """A device-signed ask creates a job owned by that device."""
+    client, app, sk, dev_id = paired
+    body = json.dumps({"question": "x"}).encode("utf-8")
+    r = client.post(
+        "/library/ask",
+        content=body,
+        headers={
+            "Content-Type": "application/json",
+            **signed_headers(sk, dev_id, "POST", "/library/ask", body),
+        },
+    )
+    assert r.status_code == 202, r.text
+    assert app.state.jobs.get(r.json()["job_id"]).device_id == dev_id
+
+
+def test_admin_ask_creates_unowned_job(paired, noop_ask):
+    client, app, _, _ = paired
+    r = client.post("/library/ask", json={"question": "x"}, headers=BEARER)
+    assert r.status_code == 202, r.text
+    assert app.state.jobs.get(r.json()["job_id"]).device_id is None
+
+
 # ── the /jobs matcher must not open other job routes ───────────────────────
 
 

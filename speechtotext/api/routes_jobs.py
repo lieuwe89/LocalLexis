@@ -126,6 +126,12 @@ def get_job(
     except KeyError:
         raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
 
+    # Device-scoped access: a paired device only sees its own jobs (or
+    # legacy/unowned ones). 404, not 403 — don't confirm the id exists.
+    # Admin bearer and authless mode read everything.
+    if _actor not in ("admin", "anonymous") and rec.device_id not in (None, _actor):
+        raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
+
     # Proxied ask jobs (remote_job_id set): fields are mutated without a
     # lock — concurrent polls may race, but each write is a full overwrite
     # from the hub's latest state, so it self-heals on the next poll. Note

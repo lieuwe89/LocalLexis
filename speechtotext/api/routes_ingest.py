@@ -102,15 +102,15 @@ def sweep_partial_uploads(incoming_dir: Path) -> int:
 
 async def _receive_signed_body(
     request: Request, incoming: Path, max_bytes: int
-) -> tuple[Path, int]:
+) -> tuple[Path, int, str]:
     """Stream the signed request body to a temp file, verify its signature.
 
     Cheap header checks first (Content-Length present + within limit), then
     stream the body through SHA-256 + tee to ``<incoming>/<random>.partial``,
     capping at ``max_bytes``, then verify the device signature against the
     computed digest. On any failure the temp file is deleted and an
-    HTTPException is raised. Returns ``(temp_path, bytes_seen)`` on success —
-    caller is responsible for renaming/cleaning up the temp file.
+    HTTPException is raised. Returns ``(temp_path, bytes_seen, device_id)``
+    on success — caller is responsible for renaming/cleaning up the temp file.
     """
     raw_length = request.headers.get("content-length")
     if raw_length is None:
@@ -164,9 +164,8 @@ async def _receive_signed_body(
     except HTTPException:
         _unlink_quietly(temp_path)
         raise
-    _ = device_id  # reserved for future per-device routing
 
-    return temp_path, bytes_seen
+    return temp_path, bytes_seen, device_id
 
 
 @router.post("/jobs/upload", status_code=202, response_model=UploadResponse)
@@ -191,7 +190,9 @@ async def post_upload(
     incoming = _incoming_dir(request)
     incoming.mkdir(parents=True, exist_ok=True)
 
-    temp_path, bytes_seen = await _receive_signed_body(request, incoming, max_bytes)
+    temp_path, bytes_seen, device_id = await _receive_signed_body(
+        request, incoming, max_bytes
+    )
 
     audio_path = _unique_upload_path(incoming, safe_name)
     try:
@@ -203,7 +204,9 @@ async def post_upload(
         ) from exc
 
     registry = request.app.state.jobs
-    job_id = registry.create(kind="transcribe", audio_path=str(audio_path))
+    job_id = registry.create(
+        kind="transcribe", audio_path=str(audio_path), device_id=device_id
+    )
 
     from speechtotext.api import runner
 
@@ -239,7 +242,9 @@ async def post_import_audio(
     _safe_filename(filename)  # validates; the name itself is recorded at commit time
     incoming = _incoming_dir(request)
     incoming.mkdir(parents=True, exist_ok=True)
-    temp_path, bytes_seen = await _receive_signed_body(request, incoming, max_bytes)
+    temp_path, bytes_seen, _device_id = await _receive_signed_body(
+        request, incoming, max_bytes
+    )
     ref = f"{secrets.token_hex(8)}.import"
     try:
         os.replace(temp_path, incoming / ref)

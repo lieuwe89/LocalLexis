@@ -61,12 +61,13 @@ def post_ask(
 ) -> dict:
     from speechtotext.api import runner  # lazy, matches routes_summarize pattern
 
+    owner = None if _actor in ("admin", "anonymous") else _actor
     runtime = getattr(request.app.state, "hub_runtime", None)
     if runtime is not None and runtime.joined():
         remote_id = _forward_ask_to_hub(body.question)
         if remote_id is not None:
             registry = request.app.state.jobs
-            job_id = registry.create(kind="ask", audio_path=None)
+            job_id = registry.create(kind="ask", audio_path=None, device_id=owner)
             rec = registry.get(job_id)
             rec.remote_job_id = remote_id
             rec.status = JobStatus.running
@@ -75,6 +76,6 @@ def post_ask(
         # else: we ARE the hub receiving our own forward — run locally.
 
     registry = request.app.state.jobs
-    job_id = registry.create(kind="ask", audio_path=None)
+    job_id = registry.create(kind="ask", audio_path=None, device_id=owner)
     runner.run_ask_job(registry, job_id, body.question, request.app.state.library_db)
     return {"job_id": job_id}
