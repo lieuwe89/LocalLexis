@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 
 from speechtotext.client.paths import hub_dir
 
@@ -58,7 +58,15 @@ def load() -> ClientState | None:
     path = _state_file()
     if not path.exists():
         return None
-    return ClientState(**json.loads(path.read_text(encoding="utf-8")))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    # Drop keys this version doesn't know: a state file written by a NEWER
+    # version must never brick startup (the v0.18.0 migration fields crashed
+    # the older bundled sidecar exactly this way). Unknown keys are preserved
+    # on disk until the next save() by a version that knows them — acceptable:
+    # save() rewrites from this dataclass, and newer-version fields are
+    # re-derivable (migrated_at re-set by a clean sweep, settings re-chosen).
+    known = {f.name for f in fields(ClientState)}
+    return ClientState(**{k: v for k, v in data.items() if k in known})
 
 
 def update_cursor(cursor: float) -> None:

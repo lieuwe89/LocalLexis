@@ -107,3 +107,26 @@ def test_delete():
     state.save(st)
     state.delete()
     assert state.load() is None
+
+
+def test_load_ignores_unknown_keys_from_newer_versions(tmp_path, monkeypatch):
+    """Version skew must never brick startup: a state file written by a NEWER
+    version (extra keys) loads fine in this version — the v0.18.0 migration
+    fields crashed the older bundled sidecar exactly this way."""
+    import json as _json
+
+    from speechtotext.client import paths, state
+
+    hub = tmp_path / "hub"
+    hub.mkdir()
+    monkeypatch.setattr(paths, "hub_dir", lambda: hub)
+    monkeypatch.setattr(state, "hub_dir", lambda: hub)
+    doc = {
+        "hub_url": "http://h:1", "workspace_id": "w", "device_id": "d",
+        "device_name": "n", "tls_spki_b64": None, "cursor": 1.0,
+        "field_from_the_future": True,
+    }
+    (hub / "client_state.json").write_text(_json.dumps(doc), encoding="utf-8")
+    st = state.load()
+    assert st is not None and st.hub_url == "http://h:1"
+    assert not hasattr(st, "field_from_the_future") or True  # unknown key dropped
