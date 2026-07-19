@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { SettingsScreen } from './SettingsScreen';
 import type { ConfigDto } from '../api/types';
@@ -321,6 +321,120 @@ test('shows a wrapped list of failures after migration completes', async () => {
   expect(await screen.findByText(/tid-x/)).toBeInTheDocument();
   expect(screen.getByText(/upload timed out/)).toBeInTheDocument();
   confirmSpy.mockRestore();
+});
+
+test('shows the offline-capture control with the current mode selected when joined', async () => {
+  mocks.api.mockImplementation((path: string) => {
+    if (path === '/models/whisper') {
+      return Promise.resolve([{ name: 'base', status: 'bundled', size_mb: 140 }]);
+    }
+    if (path === '/devices/paired') {
+      return Promise.resolve({ devices: [] });
+    }
+    if (path === '/client/hub') {
+      return Promise.resolve({
+        joined: true,
+        hub_url: 'https://hub.example',
+        device_name: 'lieuwe-laptop',
+        migrated_at: null,
+        offline_capture: 'local',
+      });
+    }
+    return Promise.reject(new Error(`unexpected api: ${path}`));
+  });
+
+  render(<SettingsScreen />);
+
+  const select = await screen.findByLabelText('When offline');
+  expect(select).toHaveValue('local');
+});
+
+test('changing the offline-capture mode POSTs and refreshes hub status', async () => {
+  let mode = 'local';
+  let refreshed = 0;
+  mocks.api.mockImplementation((path: string, opts?: { method?: string; body?: string }) => {
+    if (path === '/models/whisper') {
+      return Promise.resolve([{ name: 'base', status: 'bundled', size_mb: 140 }]);
+    }
+    if (path === '/devices/paired') {
+      return Promise.resolve({ devices: [] });
+    }
+    if (path === '/client/hub') {
+      refreshed += 1;
+      return Promise.resolve({
+        joined: true,
+        hub_url: 'https://hub.example',
+        device_name: 'lieuwe-laptop',
+        migrated_at: null,
+        offline_capture: mode,
+      });
+    }
+    if (path === '/client/hub/offline-capture') {
+      mode = JSON.parse(opts?.body ?? '{}').mode;
+      return Promise.resolve({ offline_capture: mode });
+    }
+    return Promise.reject(new Error(`unexpected api: ${path}`));
+  });
+
+  render(<SettingsScreen />);
+
+  const select = await screen.findByLabelText('When offline');
+  const refreshesBefore = refreshed;
+  fireEvent.change(select, { target: { value: 'queue' } });
+
+  expect(mocks.api).toHaveBeenCalledWith('/client/hub/offline-capture', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'queue' }),
+  });
+  await waitFor(() => expect(select).toHaveValue('queue'));
+  expect(refreshed).toBeGreaterThan(refreshesBefore);
+});
+
+test('shows an error and reverts the select when the offline-capture POST fails', async () => {
+  let rejectPost: (e: Error) => void;
+  mocks.api.mockImplementation((path: string) => {
+    if (path === '/models/whisper') {
+      return Promise.resolve([{ name: 'base', status: 'bundled', size_mb: 140 }]);
+    }
+    if (path === '/devices/paired') {
+      return Promise.resolve({ devices: [] });
+    }
+    if (path === '/client/hub') {
+      return Promise.resolve({
+        joined: true,
+        hub_url: 'https://hub.example',
+        device_name: 'lieuwe-laptop',
+        migrated_at: null,
+        offline_capture: 'local',
+      });
+    }
+    if (path === '/client/hub/offline-capture') {
+      return new Promise((_, reject) => { rejectPost = reject; });
+    }
+    return Promise.reject(new Error(`unexpected api: ${path}`));
+  });
+
+  render(<SettingsScreen />);
+
+  const select = await screen.findByLabelText('When offline');
+  fireEvent.change(select, { target: { value: 'queue' } });
+
+  // Disabled while the POST is in flight.
+  await waitFor(() => expect(select).toBeDisabled());
+
+  rejectPost!(new Error('hub unreachable'));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('hub unreachable');
+  expect(select).toHaveValue('local');
+  expect(select).not.toBeDisabled();
+});
+
+test('hides the offline-capture control when not joined', async () => {
+  render(<SettingsScreen />);
+
+  await screen.findByText('Join a hub');
+  expect(screen.queryByLabelText('When offline')).not.toBeInTheDocument();
 });
 
 test('surfaces a failed migration job error and re-enables the button', async () => {

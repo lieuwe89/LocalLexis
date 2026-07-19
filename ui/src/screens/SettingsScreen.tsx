@@ -9,7 +9,7 @@ import {
   type RecorderProvisioning,
 } from '../lib/recorderProvisioning';
 import { QRCodeSVG } from 'qrcode.react';
-import { hubStatus, joinHub, leaveHub, startMigration, type HubClientStatus } from '../lib/hubClient';
+import { hubStatus, joinHub, leaveHub, setOfflineCapture, startMigration, type HubClientStatus } from '../lib/hubClient';
 import { SettingsForm, Field } from './settings/SettingsForm';
 import { SummarizeSettings } from './settings/SummarizeSettings';
 import { TrashSection } from './settings/TrashSection';
@@ -64,6 +64,8 @@ export function SettingsScreen({ pollMs = 1500 }: { pollMs?: number } = {}) {
   const [migrateBusy, setMigrateBusy] = useState(false);
   const [migrateError, setMigrateError] = useState<string | null>(null);
   const [migrateResult, setMigrateResult] = useState<MigrateResult | null>(null);
+  const [offlineCaptureBusy, setOfflineCaptureBusy] = useState(false);
+  const [offlineCaptureError, setOfflineCaptureError] = useState<string | null>(null);
 
   // Load hub state once on mount. Failure is silent — older sidecars
   // without the hub_state command leave `hub` null and the UI hides
@@ -157,6 +159,19 @@ export function SettingsScreen({ pollMs = 1500 }: { pollMs?: number } = {}) {
       setMigrateError(e instanceof Error ? e.message : String(e));
     } finally {
       setMigrateBusy(false);
+    }
+  };
+
+  const changeOfflineCapture = async (mode: 'local' | 'queue') => {
+    setOfflineCaptureBusy(true);
+    setOfflineCaptureError(null);
+    try {
+      await setOfflineCapture(mode);
+      setClientHub(await hubStatus());
+    } catch (e) {
+      setOfflineCaptureError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOfflineCaptureBusy(false);
     }
   };
 
@@ -497,6 +512,25 @@ export function SettingsScreen({ pollMs = 1500 }: { pollMs?: number } = {}) {
             <button type="button" onClick={doLeaveHub} disabled={joinBusy}>
               Leave hub
             </button>
+
+            <div className="hub-offline-capture" style={{ marginTop: '1.25rem' }}>
+              <Field label="When offline">
+                <select
+                  value={clientHub.offline_capture ?? 'local'}
+                  disabled={offlineCaptureBusy}
+                  onChange={(e) => changeOfflineCapture(e.target.value as 'local' | 'queue')}
+                >
+                  <option value="local">Transcribe locally</option>
+                  <option value="queue">Wait for hub</option>
+                </select>
+              </Field>
+              <p style={{ color: 'var(--ink-muted)', marginTop: 0, fontSize: '0.9em' }}>
+                What captures do when the hub is unreachable.
+              </p>
+              {offlineCaptureError && (
+                <p role="alert" style={{ color: 'var(--ink-error, crimson)' }}>{offlineCaptureError}</p>
+              )}
+            </div>
 
             <div className="hub-migrate" style={{ marginTop: '1.25rem' }}>
               <h3 style={{ margin: '0 0 0.25rem' }}>Migrate library to hub</h3>

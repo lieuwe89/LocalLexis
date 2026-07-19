@@ -41,3 +41,11 @@ export async function leaveHub(): Promise<HubClientStatus> {
 export async function startMigration(): Promise<{ job_id: string }> {
   return api<{ job_id: string }>('/client/hub/migrate', { method: 'POST' });
 }
+
+export async function setOfflineCapture(mode: 'local' | 'queue'): Promise<{ offline_capture: string }> {
+  return api<{ offline_capture: string }>('/client/hub/offline-capture', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+}
