@@ -1,3 +1,5 @@
+import importlib
+
 import pytest
 import pytest_asyncio  # noqa: F401  # ensure plugin loads
 
@@ -8,20 +10,25 @@ def _isolated_app_data(tmp_path_factory, monkeypatch):
     real ~/Library/.../locallexis dir and tests can't leak state.
 
     Covers both the LibraryDB SQLite path and the workspace identity
-    file used by speechtotext.api.workspace.
+    file used by speechtotext.api.workspace, plus load_config() so a real
+    ~/.config/speechtotext/config.toml default_out_dir never becomes a
+    test app's library/incoming dir.
 
-    Implementation note: monkeypatch.setattr by string path is brittle
-    across tests that wipe sys.modules (e.g. test_sidecar_cold_start),
-    because Python's import system does not re-bind a child attribute on
-    a parent package when the child is already in sys.modules. Resolving
-    the module via ``import ... as`` and monkeypatching the live object
-    directly side-steps the broken parent attribute walk.
+    Implementation note: modules are resolved with importlib.import_module,
+    which returns the sys.modules entry — the same object a call-time
+    ``from a.b.c import f`` in application code resolves. A plain
+    ``import a.b.c as x`` instead binds via parent-package ATTRIBUTE walk,
+    which can point at a different module object after a test wipes and
+    re-imports sys.modules entries (see test_sidecar_cold_start), making
+    the patch land on a module nothing else uses.
     """
-    import speechtotext.api.library_db as _library_db
-    import speechtotext.api.secrets_store as _secrets_store
-    import speechtotext.api.tls as _tls
-    import speechtotext.api.workspace as _workspace
-    import speechtotext.client.paths as _client_paths
+    _library_db = importlib.import_module("speechtotext.api.library_db")
+    _secrets_store = importlib.import_module("speechtotext.api.secrets_store")
+    _tls = importlib.import_module("speechtotext.api.tls")
+    _workspace = importlib.import_module("speechtotext.api.workspace")
+    _client_paths = importlib.import_module("speechtotext.client.paths")
+    _app = importlib.import_module("speechtotext.api.app")
+    _config = importlib.import_module("speechtotext.config")
 
     data_dir = tmp_path_factory.mktemp("appdata")
     monkeypatch.setattr(
@@ -41,6 +48,11 @@ def _isolated_app_data(tmp_path_factory, monkeypatch):
     # module-local default_app_data_dir binding; point it at the same temp
     # dir so joined-mode runtime tests never write to the real home.
     monkeypatch.setattr(_client_paths, "default_app_data_dir", lambda: data_dir)
+    # create_app() reads the developer's real config file for
+    # default_out_dir; a stray value there would register a REAL dir as a
+    # library dir in every test app (and /trash purge tests would then
+    # touch it). Serve defaults instead.
+    monkeypatch.setattr(_app, "load_config", lambda *a, **k: _config.Config())
 
 
 def pytest_collection_modifyitems(config, items):
