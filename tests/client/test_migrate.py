@@ -16,7 +16,13 @@ class FakeDB:
         self._rows = rows
 
     def list(self, limit=10000):
-        return self._rows
+        return list(self._rows)
+
+    def count_local_origin(self):
+        return sum(
+            1 for r in self._rows
+            if r.get("origin") == "local" and not r.get("error")
+        )
 
 
 def _rows(*ids):
@@ -85,3 +91,44 @@ def test_sweep_local_skips_hub_origin_and_error_rows(monkeypatch):
     report = migrate.sweep_local(None, FakeDB(rows))
     assert report == {"migrated": ["a"], "failed": []}
     assert calls == [Path("/x/a.json")]
+
+
+def test_sweep_local_short_circuits_when_no_local_rows(monkeypatch):
+    calls = _patch_migrate_one(monkeypatch, {})
+    db = FakeDB([{"id": "b", "path": "/x/b.json", "origin": "hub"}])
+    report = migrate.sweep_local(None, db)
+    assert report == {"migrated": [], "failed": []}
+    assert calls == []
+
+
+def test_sweep_local_serializes_concurrent_sweeps(monkeypatch):
+    """The manual migrate job and the runtime auto-sweep may run at the
+    same time. Without _sweep_lock both would list the same local rows and
+    the loser's trash_transcript would blow up into a false failure; with
+    it the second sweep sees an empty (post-migration) library."""
+    import threading
+    import time
+
+    db = FakeDB(_rows("t1", "t2", "t3"))
+
+    def fake_migrate_one(client, db_arg, json_path):
+        time.sleep(0.02)  # widen the race window
+        db_arg._rows = [r for r in db_arg._rows if r["path"] != str(json_path)]
+        return "migrated"
+
+    monkeypatch.setattr(migrate, "migrate_one", fake_migrate_one)
+
+    reports = []
+
+    def run():
+        reports.append(migrate.sweep_local(None, db))
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    all_migrated = [tid for rep in reports for tid in rep["migrated"]]
+    assert sorted(all_migrated) == ["t1", "t2", "t3"]  # each row exactly once
+    assert all(rep["failed"] == [] for rep in reports)

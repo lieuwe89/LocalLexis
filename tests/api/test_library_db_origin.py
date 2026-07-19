@@ -44,6 +44,27 @@ def test_search_surfaces_origin(tmp_path):
     assert hits and hits[0]["origin"] == "hub"
 
 
+def test_count_local_origin(tmp_path):
+    synced = tmp_path / "hub" / "synced"
+    db = LibraryDB(tmp_path / "lib.db", hub_synced_dir=synced)
+    assert db.count_local_origin() == 0
+
+    local_doc = tmp_path / "out" / "a.json"
+    _write_doc(local_doc)
+    db.upsert_path(local_doc)
+    assert db.count_local_origin() == 1
+
+    hub_doc = synced / "t1.json"
+    _write_doc(hub_doc)
+    db.upsert_path(hub_doc)
+    assert db.count_local_origin() == 1  # hub-origin rows don't count
+
+    bad_doc = tmp_path / "out" / "bad.json"
+    bad_doc.write_text("{not json", encoding="utf-8")
+    db.upsert_path(bad_doc)
+    assert db.count_local_origin() == 1  # error rows don't count
+
+
 def test_existing_db_migrates_origin_column(tmp_path):
     db_path = tmp_path / "lib.db"
     db = LibraryDB(db_path)

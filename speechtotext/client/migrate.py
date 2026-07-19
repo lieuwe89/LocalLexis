@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from pathlib import Path
 
 import httpx
@@ -16,6 +17,13 @@ from speechtotext.client import sync_puller
 from speechtotext.client.paths import synced_dir
 
 _log = logging.getLogger(__name__)
+
+# Serializes concurrent sweeps: the manual migrate-library endpoint and the
+# HubRuntime post-migration auto-sweep can race over the same local rows —
+# the loser's trash_transcript hits FileNotFoundError, which shows up as a
+# false "failed" in the report and wrongly blocks migrated_at. With the
+# lock the second caller re-lists and finds nothing left to do.
+_sweep_lock = threading.Lock()
 
 
 class MigrateError(RuntimeError):
@@ -70,25 +78,30 @@ def sweep_local(client, db, *, limit: int = 10000) -> dict:
     migration job AND (post-migration) the runtime auto-sweep. Stops early
     on the first network-level failure; per-transcript failures (verify,
     corrupt JSON, hub 4xx) are recorded and skipped."""
-    migrated: list[str] = []
-    failed: list[dict] = []
-    # ponytail: no pagination; a page == limit means rows beyond it were
-    # never seen this run — log it, paginate if libraries ever grow past 10k.
-    rows = db.list(limit=limit)
-    if len(rows) == limit:
-        _log.warning("sweep_local: row count hit limit=%d; some rows unseen", limit)
-    for row in rows:
-        if row.get("origin") != "local" or row.get("error"):
-            continue
-        json_path = Path(row["path"])
-        try:
-            migrate_one(client, db, json_path)
-            migrated.append(row["id"])
-        except MigrateError as exc:
-            failed.append({"id": row["id"], "error": str(exc)})
-        except httpx.TransportError as exc:  # hub unreachable; stop, retry next run
-            failed.append({"id": row["id"], "error": f"{type(exc).__name__}: {exc}"})
-            break
-        except Exception as exc:  # this row is bad (corrupt JSON/hub 4xx); next may be fine
-            failed.append({"id": row["id"], "error": f"{type(exc).__name__}: {exc}"})
-    return {"migrated": migrated, "failed": failed}
+    # Post-migration the runtime calls this every cycle; the count keeps
+    # the steady state (no local rows left) essentially free.
+    if db.count_local_origin() == 0:
+        return {"migrated": [], "failed": []}
+    with _sweep_lock:
+        migrated: list[str] = []
+        failed: list[dict] = []
+        # ponytail: no pagination; a page == limit means rows beyond it were
+        # never seen this run — log it, paginate if libraries ever grow past 10k.
+        rows = db.list(limit=limit)
+        if len(rows) == limit:
+            _log.warning("sweep_local: row count hit limit=%d; some rows unseen", limit)
+        for row in rows:
+            if row.get("origin") != "local" or row.get("error"):
+                continue
+            json_path = Path(row["path"])
+            try:
+                migrate_one(client, db, json_path)
+                migrated.append(row["id"])
+            except MigrateError as exc:
+                failed.append({"id": row["id"], "error": str(exc)})
+            except httpx.TransportError as exc:  # hub unreachable; stop, retry next run
+                failed.append({"id": row["id"], "error": f"{type(exc).__name__}: {exc}"})
+                break
+            except Exception as exc:  # this row is bad (corrupt JSON/hub 4xx); next may be fine
+                failed.append({"id": row["id"], "error": f"{type(exc).__name__}: {exc}"})
+        return {"migrated": migrated, "failed": failed}

@@ -21,6 +21,22 @@ class TranscribeRequest(BaseModel):
     backend: str | None = None
 
 
+def _route_capture_to_hub(runtime) -> bool:
+    """Joined captures go to the hub unless the user chose local-when-offline
+    and the hub is currently unreachable. Short probe timeout: this runs in
+    the capture request path, and the slow case (hub down) is exactly when
+    the user is waiting to fall back to local."""
+    # ponytail: no probe cache — N files dropped while offline probe
+    # serially (~1s each); cache the result briefly if watch storms bite.
+    from speechtotext.client import state as state_module
+
+    st = state_module.load()
+    mode = getattr(st, "offline_capture", "local") if st else "local"
+    if mode == "queue":
+        return True
+    return runtime.hub_reachable(timeout=1.0)
+
+
 @router.post("/jobs/transcribe", status_code=202)
 def post_transcribe(req: TranscribeRequest, request: Request) -> dict:
     from speechtotext.api import runner  # lazy: ML stack loads on first job, not at boot
@@ -28,7 +44,7 @@ def post_transcribe(req: TranscribeRequest, request: Request) -> dict:
     if not audio.exists() or audio.is_dir():
         raise HTTPException(status_code=404, detail=f"audio not found: {audio}")
     runtime = getattr(request.app.state, "hub_runtime", None)
-    if runtime is not None and runtime.joined():
+    if runtime is not None and runtime.joined() and _route_capture_to_hub(runtime):
         registry = request.app.state.jobs
         job_id = registry.create(kind="hub_upload", audio_path=str(audio))
         rec = registry.get(job_id)

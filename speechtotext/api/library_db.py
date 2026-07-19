@@ -690,6 +690,16 @@ class LibraryDB:
 
     # ── queries ───────────────────────────────────────────────────────────
 
+    def count_local_origin(self) -> int:
+        """Rows sweep_local would consider migrating. Cheap enough that the
+        post-migration runtime sweep can call it every cycle."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM transcripts "
+                "WHERE origin='local' AND error IS NULL"
+            ).fetchone()
+        return int(row[0])
+
     def list(self, limit: int = 200, offset: int = 0) -> list[dict]:
         with self._lock:
             rows = self._conn.execute(

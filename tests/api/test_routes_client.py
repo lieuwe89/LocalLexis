@@ -99,6 +99,11 @@ def test_transcribe_routes_to_outbox_when_joined(tmp_path):
         client.post("/client/hub/join", json={
             "pairing_string": payload, "device_name": "x",
         })
+        # Default offline_capture is "local", which falls back to local
+        # transcription when the hub is unreachable (Task 11). This test's
+        # ASGITransport only wires the synchronous HubClient, not the real
+        # httpx.get() liveness probe, so force it as if the hub answered.
+        app.state.hub_runtime.hub_reachable = lambda timeout=1.0: True
         audio = tmp_path / "drop.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 64)
         resp = client.post("/jobs/transcribe", json={"path": str(audio)})

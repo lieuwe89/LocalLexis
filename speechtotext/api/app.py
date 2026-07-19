@@ -308,10 +308,19 @@ def create_app(
         app.state.library_db.register_dir(d)
         app.state.library_db.sync_dirs([d])
 
+    def _local_sweep(client) -> None:
+        # Post-migration invariant: any local-origin row is an offline
+        # capture waiting to reach the hub. Push it up the same way the
+        # one-time migration did (verify-then-archive).
+        from speechtotext.client import migrate as migrate_mod
+
+        migrate_mod.sweep_local(client, app.state.library_db)
+
     app.state.hub_runtime = HubRuntime(
         hub_client_factory=_client_factory,
         on_entry_sent=_on_entry_sent,
         on_synced=_on_synced,
+        on_local_sweep=_local_sweep,
     )
 
     app.include_router(ask_router)

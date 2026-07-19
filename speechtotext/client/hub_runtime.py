@@ -38,11 +38,13 @@ class HubRuntime:
         hub_client_factory: Callable = _default_factory,
         on_entry_sent: Callable[[OutboxEntry], None] | None = None,
         on_synced: Callable[[list[Path]], None] | None = None,
+        on_local_sweep: Callable[[HubClient], None] | None = None,
         period_s: float = DEFAULT_PERIOD_S,
     ) -> None:
         self._factory = hub_client_factory
         self._on_entry_sent = on_entry_sent
         self._on_synced = on_synced
+        self._on_local_sweep = on_local_sweep
         self._period = period_s
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -137,6 +139,13 @@ class HubRuntime:
                 written = sync_puller.pull_once(client)
                 if written and self._on_synced:
                     self._on_synced(written)
+                # Post-migration invariant: once migrated_at is set, any
+                # local-origin row is an offline capture waiting to reach
+                # the hub. Piggyback on this cycle rather than a separate
+                # timer.
+                st_now = state_module.load()
+                if self._on_local_sweep and st_now is not None and st_now.migrated_at:
+                    self._on_local_sweep(client)
                 self._last_error = None
                 self._last_sync_at = time.time()
             except Exception as exc:  # network/disk errors -> retry next cycle, visible in status()
