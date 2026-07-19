@@ -41,6 +41,7 @@ class JobRecord:
     audio_path: str | None = None
     paths: dict[str, str] = field(default_factory=dict)
     result: dict | None = None
+    remote_job_id: str | None = None
 
 
 class JobRegistry:

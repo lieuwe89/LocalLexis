@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from speechtotext.api.auth import verify_admin_or_device_or_anonymous
+from speechtotext.api.jobs import JobStatus
 
 router = APIRouter()
 
@@ -63,11 +64,39 @@ def _job_dict(rec) -> dict:
 
 @router.get("/jobs")
 def list_jobs(request: Request, active: bool = False) -> list[dict]:
-    from speechtotext.api.jobs import JobStatus
     recs = request.app.state.jobs.all()
     if active:
         recs = [r for r in recs if r.status in (JobStatus.pending, JobStatus.running)]
     return [_job_dict(r) for r in recs]
+
+
+def _fetch_remote_job(remote_id: str) -> dict:
+    """GET a proxied ask job's status+result from the hub.
+
+    Builds the signed client the same way ``routes_ask._forward_ask_to_hub``
+    does. No recursion guard is needed here (unlike the POST forward): a
+    self-joined loopback would hit the hub's own ``get_job``, but that
+    record's ``remote_job_id`` is always None (only the client-side record
+    created after a successful forward carries one), so the hub-side call
+    can never re-enter this proxy branch.
+    """
+    from speechtotext.api import routes_client
+    from speechtotext.client import identity as _identity
+    from speechtotext.client import state as _state
+    from speechtotext.client.hub_client import HubClient
+
+    st = _state.load()
+    ident = _identity.load()
+    if st is None or ident is None:
+        raise RuntimeError("hub state missing")
+    hub = HubClient(
+        st.hub_url, st.device_id, ident.signing_key(),
+        transport=routes_client.sync_test_transport(), timeout=10.0,
+    )
+    try:
+        return hub.get_json(f"/jobs/{remote_id}")
+    finally:
+        hub.close()
 
 
 @router.get("/jobs/{job_id}")
@@ -80,6 +109,27 @@ def get_job(
         rec = request.app.state.jobs.get(job_id)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
+
+    # Proxied ask jobs (remote_job_id set): fields are mutated without a
+    # lock — concurrent polls may race, but each write is a full overwrite
+    # from the hub's latest state, so it self-heals on the next poll. Note
+    # SSE /jobs/{id}/stream is NOT proxied for these jobs: no events are
+    # ever published locally, so a subscriber would hang — polling only.
+    if rec.remote_job_id and rec.status not in (JobStatus.complete, JobStatus.failed):
+        try:
+            remote = _fetch_remote_job(rec.remote_job_id)
+        except Exception as exc:
+            rec.status = JobStatus.failed
+            rec.error = f"hub unreachable while polling ask job: {exc}"
+            return _job_dict(rec)
+        rec.stage = remote.get("stage") or rec.stage
+        rec.percent = float(remote.get("percent") or rec.percent)
+        rec.error = remote.get("error")
+        rec.result = remote.get("result")
+        if remote.get("status") == "complete":
+            rec.status = JobStatus.complete
+        elif remote.get("status") == "failed":
+            rec.status = JobStatus.failed
     return _job_dict(rec)
 
 
