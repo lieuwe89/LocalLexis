@@ -38,7 +38,7 @@ def test_marks_best_sentence():
     assert parts[0]["text"] + parts[1]["text"] + parts[2]["text"] == text
 
 
-def test_single_sentence_marks_whole():
+def test_single_sentence_falls_back_to_plain_snippet():
     text = "Slechts een enkele zin zonder punt"
     items = _items(text)
 
@@ -47,7 +47,9 @@ def test_single_sentence_marks_whole():
 
     mod.mark_hits(items, np.zeros(3, dtype=np.float32), embed)
     parts = items[0]["hits"][0]["snippet_parts"]
-    assert parts == [{"text": text, "match": True}]
+    assert len(parts) == 1
+    assert parts[0]["match"] is False
+    assert parts[0]["text"] == text[:200]
 
 
 def test_long_context_trimmed_with_ellipsis():

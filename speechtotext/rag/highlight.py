@@ -43,7 +43,10 @@ def mark_hits(items: list[dict], query_vec, embed) -> None:
                 if not sentences:
                     continue
                 if len(sentences) == 1:
-                    hit["snippet_parts"] = [{"text": text, "match": True}]
+                    # A whole-chunk mark highlights nothing meaningful (and a
+                    # punctuation-less chunk can be hundreds of words) — show
+                    # the plain bounded snippet instead.
+                    hit["snippet_parts"] = [{"text": text[:200], "match": False}]
                     continue
                 vecs = embed(sentences)
                 best = int(np.argmax(vecs @ qv))
