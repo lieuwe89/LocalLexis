@@ -159,7 +159,10 @@ def list_transcripts(
             qvec = rag_embedder.get_embedder().embed([q])[0]
         except rag_embedder.EmbedderError as exc:
             raise HTTPException(status_code=503, detail=str(exc))
-        return db.semantic_search(qvec, rag_embedder.EMBED_MODEL, limit=limit)
+        items = db.semantic_search(qvec, rag_embedder.EMBED_MODEL, limit=limit)
+        from speechtotext.rag.highlight import mark_hits
+        mark_hits(items, qvec, rag_embedder.get_embedder().embed)
+        return items
     if q:
         return db.search(q, limit=limit, fuzzy=fuzzy, sort=sort)
     return db.list(limit=limit)

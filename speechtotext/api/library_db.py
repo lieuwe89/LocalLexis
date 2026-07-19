@@ -958,7 +958,9 @@ class LibraryDB:
                 {
                     "segment_index": c["first_segment"],
                     "start": c["start"],
-                    "snippet_parts": [{"text": c["text"][:200], "match": False}],
+                    # Full text: highlight.mark_hits (or its fallback) bounds
+                    # display length downstream, hub-side.
+                    "snippet_parts": [{"text": c["text"], "match": False}],
                     "score": c["score"],
                 }
                 for c in chunks  # already similarity-ordered from top_chunks
