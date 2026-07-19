@@ -82,7 +82,10 @@ export function AskPanel({ setRoute, setTid, pollMs = 1500 }: Props) {
                   try { await load(s.transcript_id); setTid(s.transcript_id); setRoute('complete'); } catch {}
                 }}
               >
-                {s.start != null ? fmtTs(s.start) : `#${i + 1}`}
+                {/* [n] matches the excerpt numbering the LLM cites — same
+                    array order as build_ask_messages (one chunks list feeds
+                    both the prompt and this sources list). */}
+                [{i + 1}]{s.start != null ? ` ${fmtTs(s.start)}` : ''}
               </button>
             ))}
           </div>

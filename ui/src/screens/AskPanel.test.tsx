@@ -18,16 +18,23 @@ describe('AskPanel', () => {
         id: 'j1', status: 'complete',
         result: {
           answer: 'Het antwoord is 42.',
-          sources: [{ transcript_id: 't1', segment_index: 3, start: 61 }],
+          sources: [
+            { transcript_id: 't1', segment_index: 3, start: 61 },
+            { transcript_id: 't2', segment_index: 5, start: null },
+          ],
         },
       });
     render(<AskPanel setRoute={() => {}} setTid={() => {}} pollMs={1} />);
     fireEvent.change(screen.getByPlaceholderText(/ask your library/i), { target: { value: 'wat is het antwoord?' } });
     fireEvent.click(screen.getByRole('button', { name: /ask/i }));
     await waitFor(() => expect(screen.getByText('Het antwoord is 42.')).toBeInTheDocument());
-    // aria-label is the accessible name; visible text is the timestamp.
+    // aria-label is the accessible name; visible text carries the [n] footnote
+    // number matching the citation the LLM cites, plus the timestamp.
     const src = screen.getByRole('button', { name: /Jump to source at segment 3/ });
-    expect(src).toHaveTextContent('1:01');
+    expect(src).toHaveTextContent('[1] 1:01');
+    const src2 = screen.getByRole('button', { name: /Jump to source at segment 5/ });
+    expect(src2).toHaveTextContent('[2]');
+    expect(src2).not.toHaveTextContent(':');
   });
 
   it('shows the job error on failure', async () => {
