@@ -145,6 +145,15 @@ def list_transcripts(
     # _on_complete_dir can't grow it mid-iteration inside reconcile.
     request.app.state.library_reconciler.reconcile(set(request.app.state.library_dirs))
     if q and semantic:
+        # Joined laptops delegate to the hub instead of embedding locally —
+        # the hub holds the full library + the embedding model.
+        runtime = getattr(request.app.state, "hub_runtime", None)
+        if runtime is not None and runtime.joined():
+            forwarded = _forward_semantic_to_hub(q, limit)
+            if forwarded is not None:
+                return forwarded
+            # else: a forward is already in progress on this call stack (we
+            # ARE the hub receiving that forwarded query) — embed locally.
         # First call may block for the one-time model download (see rag/embedder.py).
         try:
             qvec = rag_embedder.get_embedder().embed([q])[0]
@@ -341,6 +350,54 @@ def _forward_op_to_hub(
     if runtime := getattr(request.app.state, "hub_runtime", None):
         runtime.poke()
     return result
+
+
+def _forward_semantic_to_hub(q: str, limit: int) -> list[dict] | None:
+    """Joined laptops delegate semantic search to the hub: the hub holds
+    the full library + the embedding model. Tids match the synced copies,
+    so jump-to-segment works unchanged.
+
+    Returns None (instead of forwarding) if a forward is already in
+    progress on this call stack — see ``_forwarding_in_progress``. The
+    caller should fall back to embedding locally in that case."""
+    if _forwarding_in_progress.get():
+        return None
+    from urllib.parse import quote as _quote
+
+    from speechtotext.api import routes_client
+    from speechtotext.client import identity as _identity
+    from speechtotext.client import state as _state
+    from speechtotext.client.hub_client import HubClient
+
+    st = _state.load()
+    ident = _identity.load()
+    if st is None or ident is None:
+        raise HTTPException(status_code=503, detail="hub state missing")
+    hub = HubClient(
+        st.hub_url, st.device_id, ident.signing_key(),
+        transport=routes_client.sync_test_transport(),
+        # ponytail: hub cold-start (first-ever embed downloads the model) can
+        # exceed this — bump if it bites; the hub normally warms at startup
+        # via its EmbedWorker.
+        timeout=5.0,
+    )
+    token = _forwarding_in_progress.set(True)
+    try:
+        return hub.get_json(
+            f"/transcripts?q={_quote(q, safe='')}&semantic=1&limit={limit}"
+        )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"hub rejected semantic search: {exc.response.status_code}",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"hub unreachable for semantic search: {exc}"
+        ) from exc
+    finally:
+        _forwarding_in_progress.reset(token)
+        hub.close()
 
 
 def _forward_relabel_to_hub(
