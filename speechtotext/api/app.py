@@ -58,9 +58,13 @@ WEBUI_DIR = Path(__file__).resolve().parent.parent / "webui"
 # Ed25519 signature via :func:`speechtotext.api.auth.verify_device_signature`.
 #
 # Anything not matched here stays bearer-gated, so admin endpoints
-# (/pair/tokens, /config, /jobs, PATCH /transcripts/{tid}/relabel,
-# GET /transcripts, etc.) cannot be reached from the LAN.
+# (/pair/tokens, /config, GET /jobs, PATCH /transcripts/{tid}/relabel,
+# etc.) cannot be reached from the LAN.
 _SIGNED_TRANSCRIPT_PATCH = re.compile(r"^/transcripts/[^/]+$")
+# GET /jobs/{job_id} only — deliberately NOT GET /jobs (list), NOT
+# GET /jobs/{id}/stream, and no POST /jobs/* mutation route (those all
+# stay bearer-only). The client proxy only polls single job status.
+_SIGNED_JOB_GET = re.compile(r"^/jobs/[^/]+$")
 
 
 def _is_lan_signed_route(path: str, method: str) -> bool:
@@ -77,6 +81,14 @@ def _is_lan_signed_route(path: str, method: str) -> bool:
     if path == "/transcripts/import/audio" and method == "POST":
         return True
     if path == "/transcripts/import" and method == "POST":
+        return True
+    # Hub proxy surface for joined laptops: search, ask, ask-job polling.
+    # Handlers enforce auth via verify_admin_or_device_or_anonymous.
+    if path == "/transcripts" and method == "GET":
+        return True
+    if path == "/library/ask" and method == "POST":
+        return True
+    if method == "GET" and _SIGNED_JOB_GET.fullmatch(path):
         return True
     return False
 

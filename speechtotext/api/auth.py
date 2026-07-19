@@ -251,3 +251,22 @@ async def verify_admin_or_device(request: Request) -> str:
             return "admin"
     # Fall back to signature. verify_device_signature raises 401 on failure.
     return await verify_device_signature(request)
+
+
+async def verify_admin_or_device_or_anonymous(request: Request) -> str:
+    """Like :func:`verify_admin_or_device`, but open in authless mode.
+
+    For read/ask routes (``GET /transcripts``, ``POST /library/ask``,
+    ``GET /jobs/{job_id}``) that must stay reachable with no credentials
+    when ``LOCALLEXIS_API_TOKEN`` is unset — standalone ``stt serve``,
+    matching :class:`~speechtotext.api.app.BearerAuthMiddleware`, which
+    passes every request through in that mode. Once a token IS configured
+    the behavior is identical to :func:`verify_admin_or_device`: admin
+    bearer OR valid device signature, else 401.
+
+    Write endpoints keep :func:`verify_admin_or_device` instead, because
+    they need device attribution even in authless mode.
+    """
+    if not os.environ.get("LOCALLEXIS_API_TOKEN"):
+        return "anonymous"
+    return await verify_admin_or_device(request)

@@ -4,9 +4,11 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
+
+from speechtotext.api.auth import verify_admin_or_device_or_anonymous
 
 router = APIRouter()
 
@@ -69,7 +71,11 @@ def list_jobs(request: Request, active: bool = False) -> list[dict]:
 
 
 @router.get("/jobs/{job_id}")
-def get_job(job_id: str, request: Request) -> dict:
+def get_job(
+    job_id: str,
+    request: Request,
+    _actor: str = Depends(verify_admin_or_device_or_anonymous),
+) -> dict:
     try:
         rec = request.app.state.jobs.get(job_id)
     except KeyError:

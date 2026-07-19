@@ -15,7 +15,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from speechtotext.api.auth import verify_admin_or_device
+from speechtotext.api.auth import (
+    verify_admin_or_device,
+    verify_admin_or_device_or_anonymous,
+)
 from speechtotext.api.crdt import (
     OpRequest,
     TranscriptState,
@@ -132,6 +135,7 @@ def list_transcripts(
         description="result ordering; ignored when semantic=1",
     ),
     semantic: bool = Query(default=False, description="match by meaning (embeddings)"),
+    _actor: str = Depends(verify_admin_or_device_or_anonymous),
 ) -> list[dict]:
     db = request.app.state.library_db
     # Reconcile before responding so the user sees rows matching disk. The

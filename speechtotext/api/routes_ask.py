@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
+
+from speechtotext.api.auth import verify_admin_or_device_or_anonymous
 
 router = APIRouter()
 
@@ -11,7 +13,11 @@ class AskBody(BaseModel):
 
 
 @router.post("/library/ask", status_code=202)
-def post_ask(body: AskBody, request: Request) -> dict:
+def post_ask(
+    body: AskBody,
+    request: Request,
+    _actor: str = Depends(verify_admin_or_device_or_anonymous),
+) -> dict:
     from speechtotext.api import runner  # lazy, matches routes_summarize pattern
 
     registry = request.app.state.jobs
