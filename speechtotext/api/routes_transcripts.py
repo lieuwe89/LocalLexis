@@ -222,6 +222,11 @@ def get_transcript_audio(
     audio_raw = doc.get("audio_path")
     audio = Path(audio_raw) if audio_raw else None
     if audio is None or not audio.is_file():
+        runtime = getattr(request.app.state, "hub_runtime", None)
+        if runtime is not None and runtime.joined():
+            proxied = _stream_audio_from_hub(tid, request.headers.get("range"))
+            if proxied is not None:
+                return proxied
         raise HTTPException(status_code=404, detail="audio file not found on server")
 
     media_type = mimetypes.guess_type(audio.name)[0] or "application/octet-stream"
@@ -279,6 +284,70 @@ def _is_under(path: Path, root: Path) -> bool:
 _forwarding_in_progress: ContextVar[bool] = ContextVar(
     "_forwarding_in_progress", default=False
 )
+
+
+def _stream_audio_from_hub(tid: str, range_header: str | None):
+    """Migrated transcripts keep their audio on the hub; stream it through
+    with Range passthrough so seeking works. Returns None when this process
+    IS the hub receiving its own forward (recursion guard) — caller 404s."""
+    from urllib.parse import quote
+
+    from fastapi.responses import StreamingResponse
+
+    from speechtotext.api import routes_client
+    from speechtotext.client import identity as _identity
+    from speechtotext.client import state as _state
+    from speechtotext.client.hub_client import HubClient
+
+    if _forwarding_in_progress.get():
+        return None
+    st = _state.load()
+    ident = _identity.load()
+    if st is None or ident is None:
+        raise HTTPException(status_code=503, detail="hub state missing")
+    hub = HubClient(
+        st.hub_url, st.device_id, ident.signing_key(),
+        transport=routes_client.sync_test_transport(), timeout=30.0,
+    )
+    token = _forwarding_in_progress.set(True)
+    try:
+        extra = {"Range": range_header} if range_header else None
+        resp = hub.stream_get(
+            f"/transcripts/{quote(tid, safe='')}/audio", extra
+        )
+    except Exception as exc:
+        _forwarding_in_progress.reset(token)
+        hub.close()
+        raise HTTPException(
+            status_code=503, detail=f"hub unreachable for audio: {exc}"
+        ) from exc
+    # Reset right after the send: on a loopback transport the hub-side handler
+    # runs DURING stream_get, which is the recursion window; the client-side
+    # body iteration below happens after the response already started.
+    _forwarding_in_progress.reset(token)
+
+    if resp.status_code >= 400:
+        code = resp.status_code
+        resp.close()
+        hub.close()
+        raise HTTPException(status_code=code, detail="hub could not serve audio")
+
+    passthrough = {
+        k: v for k, v in resp.headers.items()
+        if k.lower() in ("content-type", "content-length", "content-range", "accept-ranges")
+    }
+
+    def _iter():
+        try:
+            yield from resp.iter_bytes()
+        finally:
+            resp.close()
+            hub.close()
+
+    return StreamingResponse(
+        _iter(), status_code=resp.status_code, headers=passthrough,
+        media_type=resp.headers.get("content-type"),
+    )
 
 
 def _forward_op_to_hub(
