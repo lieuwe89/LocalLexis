@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable, Literal
 
 from speechtotext.models import Segment
+from speechtotext.pipeline import CancelledError
 
 # A run of this many back-to-back segments with identical normalised text is
 # almost certainly a decoder repetition loop, not real speech. Collapse it.
@@ -78,10 +79,6 @@ _DEVICE_MAP: dict[str, tuple[str, str]] = {
     "cuda": ("cuda", "float16"),
     "mps": ("cpu", "int8"),  # CTranslate2 has no native MPS; CPU on Apple Silicon
 }
-
-
-class CancelledError(Exception):
-    pass
 
 
 class FasterWhisperASR:

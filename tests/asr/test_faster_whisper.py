@@ -1,8 +1,12 @@
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from speechtotext.asr.faster_whisper import FasterWhisperASR, _collapse_repetitions
 from speechtotext.models import Segment
+from speechtotext.pipeline import CancelledError
 
 
 def _fake_whisper_segment(start: float, end: float, text: str):
@@ -36,6 +40,27 @@ def test_transcribe_returns_segments(tmp_path: Path):
     assert isinstance(result[0], Segment)
     assert result[0].text == "hello"
     assert result[0].language == "en"
+
+
+def test_cancel_mid_transcription_raises_pipeline_cancelled(tmp_path: Path):
+    """Cancel during segment iteration must raise the *pipeline's*
+    CancelledError so runner's `except CancelledError` catches it and the job
+    ends as a clean cancel instead of an error."""
+    wav = tmp_path / "x.wav"
+    wav.write_bytes(b"fake")
+
+    fake_segments = iter([_fake_whisper_segment(0.0, 1.0, "hello")])
+    fake_info = MagicMock(language="en", duration=1.0)
+    cancel = threading.Event()
+    cancel.set()
+
+    with patch("faster_whisper.WhisperModel") as Model:
+        instance = Model.return_value
+        instance.transcribe.return_value = (fake_segments, fake_info)
+
+        asr = FasterWhisperASR(model_size="tiny", backend="cpu")
+        with pytest.raises(CancelledError):
+            asr.transcribe(wav, language=None, cancel_event=cancel)
 
 
 def test_backend_to_device_mapping():

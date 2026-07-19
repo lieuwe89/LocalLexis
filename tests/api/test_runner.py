@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from speechtotext.api.events import CompleteEvent, LineEvent, StageEvent
+from speechtotext.api.events import CompleteEvent, ErrorEvent, LineEvent, StageEvent
 from speechtotext.api.jobs import JobRegistry, JobStatus
 from speechtotext.api.runner import run_transcribe_job
 from speechtotext.models import LabeledSegment, Transcript
@@ -49,6 +49,43 @@ async def test_runner_emits_stage_line_complete(tmp_path):
     assert "LineEvent" in types
     assert types[-1] == "CompleteEvent"
     assert reg.get(job_id).status == JobStatus.complete
+
+
+@pytest.mark.asyncio
+async def test_cancel_mid_asr_reports_clean_cancel(tmp_path):
+    """Regression: a cancel raised inside the ASR loop must end the job as a
+    clean 'cancelled', not a generic error.
+
+    faster_whisper.py used to define its own CancelledError, so a job
+    cancelled mid-transcription bypassed runner's `except CancelledError`
+    (which catches the pipeline's class) and reached the UI as
+    'CancelledError: transcription cancelled' instead of 'cancelled'.
+    """
+    from speechtotext.asr.faster_whisper import CancelledError as ASRCancelledError
+
+    audio = tmp_path / "x.mp3"
+    audio.write_bytes(b"fake")
+    reg = JobRegistry()
+    job_id = reg.create(kind="transcribe", audio_path=str(audio))
+
+    with patch("speechtotext.api.runner._build_pipeline") as build:
+        pipe = MagicMock()
+        pipe.run.side_effect = ASRCancelledError("transcription cancelled")
+        build.return_value = (pipe, "cpu")
+
+        sub = reg.subscribe(job_id)
+        run_transcribe_job(reg, job_id, audio)
+
+        events = []
+        async for ev in sub:
+            events.append(ev)
+
+    last = events[-1]
+    assert isinstance(last, ErrorEvent)
+    assert last.message == "cancelled"
+    rec = reg.get(job_id)
+    assert rec.status == JobStatus.failed
+    assert rec.error == "cancelled"
 
 
 @pytest.mark.asyncio
