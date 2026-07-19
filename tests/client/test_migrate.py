@@ -9,6 +9,7 @@ from pathlib import Path
 import httpx
 
 from speechtotext.client import migrate
+from speechtotext.client.paths import synced_dir
 
 
 class FakeDB:
@@ -104,6 +105,24 @@ def test_sweep_local_logs_failures(monkeypatch, caplog):
     assert any("t2" in rec.message for rec in caplog.records)
 
 
+def test_sweep_local_skips_stale_local_row_already_in_synced_dir(monkeypatch):
+    """A row can say origin="local" but already point into the synced dir
+    (indexed before hub_synced_dir wiring existed). migrate_one must never
+    be called for it — that would re-sync the hub copy onto itself and then
+    trash it, deleting the transcript."""
+    calls = _patch_migrate_one(monkeypatch, {})
+    synced_dir().mkdir(parents=True, exist_ok=True)
+    stale_path = synced_dir() / "stale.json"
+    stale_path.write_text("{}", encoding="utf-8")
+    rows = [
+        {"id": "stale", "path": str(stale_path), "origin": "local"},
+        {"id": "a", "path": "/x/a.json", "origin": "local"},
+    ]
+    report = migrate.sweep_local(None, FakeDB(rows))
+    assert report == {"migrated": ["a"], "failed": []}
+    assert calls == [Path("/x/a.json")]
+
+
 def test_sweep_local_short_circuits_when_no_local_rows(monkeypatch):
     calls = _patch_migrate_one(monkeypatch, {})
     db = FakeDB([{"id": "b", "path": "/x/b.json", "origin": "hub"}])
@@ -143,3 +162,20 @@ def test_sweep_local_serializes_concurrent_sweeps(monkeypatch):
     all_migrated = [tid for rep in reports for tid in rep["migrated"]]
     assert sorted(all_migrated) == ["t1", "t2", "t3"]  # each row exactly once
     assert all(rep["failed"] == [] for rep in reports)
+
+
+def test_migrate_one_rejects_path_already_in_synced_dir():
+    """Belt and braces on top of the sweep_local skip: if anything else ever
+    calls migrate_one with a path inside the synced dir, it must refuse
+    instead of re-syncing the hub copy onto itself and trashing it."""
+    synced_dir().mkdir(parents=True, exist_ok=True)
+    path = synced_dir() / "already-synced.json"
+    path.write_text('{"segments": [], "speakers": [], "title": "t"}', encoding="utf-8")
+
+    try:
+        migrate.migrate_one(None, None, path)
+        assert False, "expected MigrateError"
+    except migrate.MigrateError as exc:
+        assert "already lives in the synced dir" in str(exc)
+
+    assert path.is_file()  # untouched

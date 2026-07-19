@@ -30,9 +30,22 @@ class MigrateError(RuntimeError):
     pass
 
 
+def _is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
 def migrate_one(client, db, json_path: Path) -> str:
     """Migrate one local transcript. Returns "migrated". Raises MigrateError
     if the hub copy cannot be verified; the original is left untouched then."""
+    # Belt and braces: sweep_local already filters these out, but any other
+    # caller passing a path that's already the hub copy would otherwise have
+    # this function re-sync it onto itself and then trash it.
+    if _is_under(json_path, synced_dir()):
+        raise MigrateError(f"{json_path.stem}: original already lives in the synced dir")
     doc = json.loads(json_path.read_text(encoding="utf-8"))
     tid = json_path.stem
     audio_raw = doc.get("audio_path")
@@ -94,6 +107,13 @@ def sweep_local(client, db, *, limit: int = 10000) -> dict:
             if row.get("origin") != "local" or row.get("error"):
                 continue
             json_path = Path(row["path"])
+            # origin can be a STALE label: rows indexed before hub_synced_dir
+            # wiring existed may still say "local" while json_path already
+            # points into the synced dir. Treating that as a migratable
+            # original makes migrate_one sync the hub copy onto itself and
+            # then trash it — the transcript vanishes. Skip on path, not label.
+            if _is_under(json_path, synced_dir()):
+                continue
             try:
                 migrate_one(client, db, json_path)
                 migrated.append(row["id"])
