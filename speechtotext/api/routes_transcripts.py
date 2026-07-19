@@ -206,7 +206,11 @@ _RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 
 @router.get("/transcripts/{tid}/audio")
-def get_transcript_audio(tid: str, request: Request):
+def get_transcript_audio(
+    tid: str,
+    request: Request,
+    _actor: str = Depends(verify_admin_or_device_or_anonymous),
+):
     db = request.app.state.library_db
     p = db.get_path(tid) or find_sidecar(set(request.app.state.library_dirs), tid)
     if p is None or not p.exists():

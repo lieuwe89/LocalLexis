@@ -65,6 +65,10 @@ _SIGNED_TRANSCRIPT_PATCH = re.compile(r"^/transcripts/[^/]+$")
 # GET /jobs/{id}/stream, and no POST /jobs/* mutation route (those all
 # stay bearer-only). The client proxy only polls single job status.
 _SIGNED_JOB_GET = re.compile(r"^/jobs/[^/]+$")
+# Audio streaming for joined laptops (migrated transcripts keep audio on the
+# hub). The transcript DOC route stays bearer-only — devices get full docs
+# via /sync, they don't need ad-hoc doc reads.
+_SIGNED_AUDIO_GET = re.compile(r"^/transcripts/[^/]+/audio$")
 
 
 def _is_lan_signed_route(path: str, method: str) -> bool:
@@ -89,6 +93,8 @@ def _is_lan_signed_route(path: str, method: str) -> bool:
     if path == "/library/ask" and method == "POST":
         return True
     if method == "GET" and _SIGNED_JOB_GET.fullmatch(path):
+        return True
+    if method == "GET" and _SIGNED_AUDIO_GET.fullmatch(path):
         return True
     return False
 

@@ -167,3 +167,61 @@ def test_jobs_list_and_mutations_stay_bearer_gated(paired):
     assert client.post("/jobs/some-id/cancel").status_code == 401
     # GET /jobs/{id}/stream is not matched by the single-segment regex.
     assert client.get("/jobs/some-id/stream").status_code == 401
+
+
+# ── audio streaming for joined laptops (migrated transcripts) ──────────────
+
+
+def _write_transcript_with_audio(app, tmp_path, tid="rec"):
+    """Register a transcript doc pointing at a real audio file, discoverable
+    via find_sidecar (mirrors tests/api/test_audio_endpoint.py's _write)."""
+    audio = tmp_path / f"{tid}.wav"
+    audio.write_bytes(b"RIFF" + bytes(100))
+    doc = {
+        "audio_path": str(audio), "duration_seconds": 1.0, "language": "en",
+        "speakers": {}, "segments": [], "models": {},
+        "created_at": "2026-07-07T10:00:00+00:00",
+    }
+    (tmp_path / f"{tid}.json").write_text(json.dumps(doc), encoding="utf-8")
+    app.state.library_dirs.add(tmp_path)
+    return audio
+
+
+def test_device_signed_audio_accepted(paired, tmp_path):
+    client, app, sk, dev_id = paired
+    audio = _write_transcript_with_audio(app, tmp_path)
+    path = "/transcripts/rec/audio"
+    r = client.get(path, headers=signed_headers(sk, dev_id, "GET", path))
+    assert r.status_code == 200, r.text
+    assert r.content == audio.read_bytes()
+
+    r = client.get(
+        path,
+        headers={
+            "Range": "bytes=0-3",
+            **signed_headers(sk, dev_id, "GET", path),
+        },
+    )
+    assert r.status_code == 206, r.text
+    assert "content-range" in r.headers
+
+
+def test_unsigned_audio_still_401(paired, tmp_path):
+    client, app, _, _ = paired
+    _write_transcript_with_audio(app, tmp_path)
+    assert client.get("/transcripts/rec/audio").status_code == 401
+
+
+def test_authless_audio_still_open(anon, tmp_path):
+    client, app = anon
+    _write_transcript_with_audio(app, tmp_path)
+    assert client.get("/transcripts/rec/audio").status_code == 200
+
+
+def test_audio_regex_scope(paired, tmp_path):
+    client, app, sk, dev_id = paired
+    _write_transcript_with_audio(app, tmp_path)
+    # The DOC route stays bearer-only: devices get full docs via /sync.
+    path = "/transcripts/rec"
+    r = client.get(path, headers=signed_headers(sk, dev_id, "GET", path))
+    assert r.status_code == 401
