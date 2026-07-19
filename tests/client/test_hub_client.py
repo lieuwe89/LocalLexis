@@ -101,6 +101,48 @@ def test_client_raises_on_error_status():
         client.get_json("/sync/since/0.0")
 
 
+def test_stream_get_signs_and_streams():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers.get("X-Device-Id") == "dev-1"
+        assert "X-Signature-B64" in request.headers
+        assert "X-Timestamp" in request.headers
+        assert "X-Nonce" in request.headers
+        assert request.headers.get("Range") == "bytes=0-3"
+        return httpx.Response(
+            200,
+            content=b"audio-bytes",
+            headers={
+                "Content-Type": "audio/wav",
+                "Accept-Ranges": "bytes",
+            },
+        )
+
+    sk = SigningKey.generate()
+    client = HubClient(
+        "http://hub:8010", "dev-1", sk, transport=httpx.MockTransport(handler)
+    )
+    resp = client.stream_get(
+        "/audio/abc", extra_headers={"Range": "bytes=0-3"}
+    )
+    assert b"".join(resp.iter_bytes()) == b"audio-bytes"
+    assert resp.headers["content-type"] == "audio/wav"
+    assert resp.headers["accept-ranges"] == "bytes"
+    resp.close()
+
+
+def test_stream_get_does_not_raise_on_error_status():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"detail": "not found"})
+
+    sk = SigningKey.generate()
+    client = HubClient(
+        "http://hub:8010", "dev-1", sk, transport=httpx.MockTransport(handler)
+    )
+    resp = client.stream_get("/audio/missing")
+    assert resp.status_code == 404
+    resp.close()
+
+
 def test_upload_filename_with_space_is_percent_encoded(tmp_path):
     audio = tmp_path / "my rec.wav"
     audio.write_bytes(b"RIFF00")

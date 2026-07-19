@@ -88,6 +88,21 @@ class HubClient:
         resp.raise_for_status()
         return resp.json()
 
+    def stream_get(
+        self, path_with_query: str, extra_headers: dict[str, str] | None = None
+    ) -> httpx.Response:
+        """Signed streaming GET. Returns the OPEN response — the caller must
+        close it (or iterate it to completion). Error statuses are returned,
+        not raised, so callers can pass them through (e.g. audio proxy 404/416).
+        """
+        headers = signed_headers(
+            self._sk, self.device_id, "GET", path_with_query
+        )
+        if extra_headers:
+            headers.update(extra_headers)
+        req = self._http.build_request("GET", path_with_query, headers=headers)
+        return self._http.send(req, stream=True)
+
     def patch_json(self, path: str, body: dict) -> Any:
         import json as _json
 
