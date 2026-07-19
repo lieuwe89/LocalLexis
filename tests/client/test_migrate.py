@@ -93,6 +93,17 @@ def test_sweep_local_skips_hub_origin_and_error_rows(monkeypatch):
     assert calls == [Path("/x/a.json")]
 
 
+def test_sweep_local_logs_failures(monkeypatch, caplog):
+    """The runtime auto-sweep discards the report, so this log line is the
+    only visibility into repeat per-row failures."""
+    _patch_migrate_one(monkeypatch, {
+        "t2.json": migrate.MigrateError("t2: segments mismatch after sync"),
+    })
+    with caplog.at_level("WARNING", logger="speechtotext.client.migrate"):
+        migrate.sweep_local(None, FakeDB(_rows("t1", "t2", "t3")))
+    assert any("t2" in rec.message for rec in caplog.records)
+
+
 def test_sweep_local_short_circuits_when_no_local_rows(monkeypatch):
     calls = _patch_migrate_one(monkeypatch, {})
     db = FakeDB([{"id": "b", "path": "/x/b.json", "origin": "hub"}])

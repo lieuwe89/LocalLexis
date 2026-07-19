@@ -140,7 +140,8 @@ export function SettingsScreen({ pollMs = 1500 }: { pollMs?: number } = {}) {
   const doMigrate = async () => {
     const ok = window.confirm(
       'Migrate all local transcripts to the hub and move the originals to trash?\n\n' +
-      'You can restore them from Settings → Trash.',
+      'You can restore them from Settings → Trash. ' +
+      'Audio playback will come from the hub afterwards.',
     );
     if (!ok) return;
     setMigrateBusy(true);
@@ -544,6 +545,8 @@ export function SettingsScreen({ pollMs = 1500 }: { pollMs?: number } = {}) {
                   <p style={{ color: 'var(--ink-muted)', marginTop: 0 }}>
                     Send all locally recorded transcripts to the hub, one time.
                     Originals are archived to trash after the hub copy is verified.
+                    Semantic search and Ask use the hub, so transcripts become
+                    searchable there after migrating.
                   </p>
                   <button type="button" onClick={doMigrate} disabled={migrateBusy}>
                     {migrateBusy ? 'Migrating…' : 'Migrate library to hub'}
@@ -565,6 +568,13 @@ export function SettingsScreen({ pollMs = 1500 }: { pollMs?: number } = {}) {
                             </li>
                           ))}
                         </ul>
+                      )}
+                      {migrateResult.failed.length > 0 && (
+                        <p style={{ whiteSpace: 'normal', overflowWrap: 'break-word' }}>
+                          Migration incomplete — offline captures keep transcribing
+                          locally but won't auto-sync to the hub until every
+                          transcript has migrated.
+                        </p>
                       )}
                     </div>
                   )}

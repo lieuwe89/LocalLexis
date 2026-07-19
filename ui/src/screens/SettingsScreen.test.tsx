@@ -268,6 +268,7 @@ test('runs a migration and reports the migrated count on completion', async () =
   expect(await screen.findByText('Migrating…')).toBeInTheDocument();
   expect(await screen.findByText('2 transcripts migrated')).toBeInTheDocument();
   expect(mocks.api).toHaveBeenCalledWith('/client/hub/migrate', { method: 'POST' });
+  expect(screen.queryByText(/Migration incomplete/)).not.toBeInTheDocument();
   confirmSpy.mockRestore();
 });
 
@@ -320,6 +321,7 @@ test('shows a wrapped list of failures after migration completes', async () => {
 
   expect(await screen.findByText(/tid-x/)).toBeInTheDocument();
   expect(screen.getByText(/upload timed out/)).toBeInTheDocument();
+  expect(screen.getByText(/Migration incomplete/)).toBeInTheDocument();
   confirmSpy.mockRestore();
 });
 

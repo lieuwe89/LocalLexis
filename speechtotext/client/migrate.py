@@ -104,4 +104,9 @@ def sweep_local(client, db, *, limit: int = 10000) -> dict:
                 break
             except Exception as exc:  # this row is bad (corrupt JSON/hub 4xx); next may be fine
                 failed.append({"id": row["id"], "error": f"{type(exc).__name__}: {exc}"})
+        if failed:
+            _log.warning(
+                "sweep_local: %d transcript(s) failed to migrate: %s",
+                len(failed), ", ".join(f["id"] for f in failed),
+            )
         return {"migrated": migrated, "failed": failed}
