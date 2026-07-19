@@ -11,12 +11,14 @@ into an in-process ASGI app; production leaves it None.
 from __future__ import annotations
 
 import asyncio
+from typing import Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from speechtotext.client import join as join_module
+from speechtotext.client import state as state_module
 
 router = APIRouter()
 
@@ -81,6 +83,10 @@ class JoinRequest(BaseModel):
     device_name: str = Field(min_length=1, max_length=128)
 
 
+class OfflineCaptureRequest(BaseModel):
+    mode: Literal["local", "queue"]
+
+
 def _runtime(request: Request):
     return request.app.state.hub_runtime
 
@@ -134,6 +140,14 @@ def hub_migrate(request: Request) -> dict:
     job_id = registry.create(kind="migrate", audio_path=None)
     runner.run_migrate_job(registry, job_id, request.app.state.library_db)
     return {"job_id": job_id}
+
+
+@router.post("/client/hub/offline-capture")
+def set_offline_capture(req: OfflineCaptureRequest, request: Request) -> dict:
+    if not _runtime(request).joined():
+        raise HTTPException(status_code=409, detail="not joined to a hub")
+    state_module.update_fields(offline_capture=req.mode)
+    return {"offline_capture": req.mode}
 
 
 @router.post("/client/hub/leave")

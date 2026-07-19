@@ -16,6 +16,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+import httpx
+
 from speechtotext.client import identity as identity_module
 from speechtotext.client import state as state_module
 from speechtotext.client import sync_puller, upload_queue
@@ -70,6 +72,18 @@ class HubRuntime:
 
     def poke(self) -> None:
         self._wake.set()
+
+    def hub_reachable(self, timeout: float = 2.0) -> bool:
+        """Cheap liveness probe. ANY HTTP response (even 401) proves the hub
+        is reachable; only transport-level failures count as offline."""
+        st = state_module.load()
+        if st is None:
+            return False
+        try:
+            httpx.get(f"{st.hub_url}/health", timeout=timeout)
+            return True
+        except Exception:
+            return False
 
     # -- work ------------------------------------------------------------
     def enqueue_upload(self, audio_path: Path, *, job_id: str | None) -> None:
