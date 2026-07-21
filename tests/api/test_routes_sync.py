@@ -115,6 +115,20 @@ class TestSyncSnapshot:
         assert body["transcripts"][0]["id"] == "alpha"
 
 
+    def test_skips_doc_with_segments_missing_wire_fields(self, app, tmp_path):
+        # A doc whose segments lack start/end/text would make the Android
+        # client reject the whole batch — the hub must drop just that one.
+        _write_transcript(tmp_path, "good")
+        bad = _make_doc(tmp_path / "bad.mp3")
+        bad["segments"] = [{"speaker": "SPEAKER_00", "text": "hi"}]  # no start/end
+        _write_transcript(tmp_path, "bad", doc=bad)
+        client = TestClient(app)
+        sk, dev_id = _pair(client)
+        body = _signed_get(client, sk, dev_id, "/sync/snapshot").json()
+        ids = {d["id"] for d in body["transcripts"]}
+        assert ids == {"good"}  # "bad" dropped, "good" still delivered
+
+
 # ── Since ─────────────────────────────────────────────────────────────────
 
 

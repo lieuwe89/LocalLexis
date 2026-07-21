@@ -37,6 +37,7 @@ over METHOD + "\\n" + PATH + "\\n" + body.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +47,31 @@ from pydantic import BaseModel, Field
 from speechtotext.api.auth import verify_device_signature
 from speechtotext.api.workspace import get_workspace_id
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+
+def _wire_valid_segments(doc: dict[str, Any]) -> bool:
+    """True if every segment carries the fields mobile clients require.
+
+    The Android ``WireSegment`` type has non-defaulted ``start``, ``end``
+    and ``text`` fields; a segment missing any of them makes the client
+    reject the *entire* sync batch. Docs that fail this check are dropped
+    from the wire (mirroring the corrupt-file skip in ``_build_delta``) so
+    one malformed transcript can't stall the whole workspace's sync.
+    """
+    segments = doc.get("segments")
+    if segments is None:
+        return True  # no segments key at all is fine (empty transcript)
+    if not isinstance(segments, list):
+        return False
+    for seg in segments:
+        if not isinstance(seg, dict):
+            return False
+        if "start" not in seg or "end" not in seg or "text" not in seg:
+            return False
+    return True
 
 
 class SyncResponse(BaseModel):
@@ -82,6 +107,14 @@ def _build_delta(
             doc = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             # Index references a file that's gone or corrupt; skip.
+            continue
+        if not _wire_valid_segments(doc):
+            # Schema-invalid segments (e.g. missing start/end) would make
+            # the mobile client reject the whole batch; drop this one doc.
+            logger.warning(
+                "sync: skipping %s — segments missing required wire fields",
+                path.name,
+            )
             continue
         # Surface the transcript id (json file stem) on the wire — the
         # index keys on it (json_path.stem) but it isn't inside the doc.
