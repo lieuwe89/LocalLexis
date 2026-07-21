@@ -29,4 +29,22 @@ object UploadScheduler {
             request,
         )
     }
+
+    /**
+     * Re-enqueue any recording still sitting in local storage. Recordings
+     * are deleted only after a successful upload ([UploadWorker]), so anything
+     * left here never made it to the hub — e.g. captured while unpaired, or
+     * whose upload work was lost. [ExistingWorkPolicy.KEEP] makes this a no-op
+     * for uploads already pending, so it's safe to call on every app start.
+     */
+    fun sweepPending(context: Context) {
+        val dir = File(context.filesDir, "recordings")
+        for (file in pendingRecordings(dir)) enqueue(context, file)
+    }
 }
+
+/** Non-empty `.m4a` recordings in [dir]; empty list if the dir is absent. */
+fun pendingRecordings(dir: File): List<File> =
+    dir.listFiles { f -> f.isFile && f.extension == "m4a" && f.length() > 0L }
+        ?.sorted()
+        ?: emptyList()
