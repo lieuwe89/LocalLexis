@@ -26,4 +26,5 @@ def build_asr(cfg: "Config", backend: str) -> "ASRBackend":
         model_size=cfg.asr_model,
         backend=backend,  # type: ignore[arg-type]
         download_root=cfg.model_cache_dir,
+        cpu_threads=cfg.asr_cpu_threads,
     )

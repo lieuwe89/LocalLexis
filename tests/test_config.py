@@ -9,7 +9,15 @@ def test_default_config_when_no_file(tmp_path: Path):
     cfg = load_config(config_path=tmp_path / "missing.toml")
     assert cfg.backend in {"auto", "cpu", "cuda", "mps"}
     assert cfg.asr_model == "base.en"
+    assert cfg.asr_cpu_threads == 0  # 0 = CTranslate2 default
     assert cfg.hf_token is None
+
+
+def test_asr_cpu_threads_from_toml(tmp_path: Path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('asr_model = "large-v3"\nasr_cpu_threads = 16\n')
+    cfg = load_config(config_path=cfg_file)
+    assert cfg.asr_cpu_threads == 16
     assert cfg.default_out_dir is None
     assert cfg.watch.recursive is False
     assert cfg.watch.debounce_seconds == 2

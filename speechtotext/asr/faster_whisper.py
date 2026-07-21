@@ -87,6 +87,7 @@ class FasterWhisperASR:
         model_size: str = "base.en",
         backend: Literal["cpu", "cuda", "mps"] = "cpu",
         download_root: Path | None = None,
+        cpu_threads: int = 0,
     ) -> None:
         from faster_whisper import WhisperModel  # lazy: deferred from module load to first instantiation
 
@@ -98,6 +99,7 @@ class FasterWhisperASR:
             device=device,
             compute_type=compute_type,
             download_root=None if bundled else (str(download_root) if download_root else None),
+            cpu_threads=cpu_threads,  # 0 = CTranslate2 default; raised via config on many-core hosts
         )
 
     def transcribe(

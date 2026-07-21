@@ -50,6 +50,9 @@ class Config:
     backend: Backend = "auto"
     asr_model: str = "base.en"
     asr_engine: AsrEngine = "local"
+    # CPU threads for local faster-whisper (CTranslate2 intra-op). 0 = library
+    # default (~4). Raise on many-core hosts to speed up long transcripts.
+    asr_cpu_threads: int = 0
     remote_asr_url: str = DEFAULT_REMOTE_ASR_URL
     remote_asr_model: str = DEFAULT_REMOTE_ASR_MODEL
     hf_token: str | None = None
@@ -109,6 +112,7 @@ def load_config(config_path: Path = DEFAULT_CONFIG_PATH) -> Config:
         backend=backend,  # type: ignore[arg-type]
         asr_model=str(raw.get("asr_model", "base.en")),
         asr_engine=asr_engine,  # type: ignore[arg-type]
+        asr_cpu_threads=int(raw.get("asr_cpu_threads", 0)),
         remote_asr_url=str(raw.get("remote_asr_url", DEFAULT_REMOTE_ASR_URL)),
         remote_asr_model=str(raw.get("remote_asr_model", DEFAULT_REMOTE_ASR_MODEL)),
         hf_token=raw.get("hf_token"),
