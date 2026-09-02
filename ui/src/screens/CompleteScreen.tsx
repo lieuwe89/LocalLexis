@@ -84,8 +84,17 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
       // clipboard API can fail in restricted contexts; ignore
     }
   };
-  const onOpenTxt = () => txtPath && platform.openPath(txtPath).catch((e) => console.error('open txt failed:', e));
-  const onOpenJson = () => jsonPath && platform.openPath(jsonPath).catch((e) => console.error('open json failed:', e));
+  // Web build: no filesystem access, so fetch the file and save it as a
+  // browser download; native keeps opening the path via the OS.
+  const canDownload = !!platform.downloadTranscriptFile && !!tid;
+  const onOpenTxt = () =>
+    canDownload
+      ? platform.downloadTranscriptFile!(tid!, 'txt').catch((e) => console.error('download txt failed:', e))
+      : txtPath && platform.openPath(txtPath).catch((e) => console.error('open txt failed:', e));
+  const onOpenJson = () =>
+    canDownload
+      ? platform.downloadTranscriptFile!(tid!, 'json').catch((e) => console.error('download json failed:', e))
+      : jsonPath && platform.openPath(jsonPath).catch((e) => console.error('open json failed:', e));
 
   const apply = async () => {
     const changed: Record<string, string> = {};
@@ -224,7 +233,7 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
           </button>
           <button
             className="icon-btn"
-            title={txtPath ? `Open ${txtPath}` : 'No .txt file available'}
+            title={canDownload ? 'Download .txt' : txtPath ? `Open ${txtPath}` : 'No .txt file available'}
             onClick={onOpenTxt}
             disabled={!txtPath}
           >
@@ -232,7 +241,7 @@ export function CompleteScreen({ doc, txtPath, jsonPath, tid, onRelabel, onRenam
           </button>
           <button
             className="icon-btn"
-            title={jsonPath ? `Open ${jsonPath}` : 'No .json file available'}
+            title={canDownload ? 'Download .json' : jsonPath ? `Open ${jsonPath}` : 'No .json file available'}
             onClick={onOpenJson}
             disabled={!jsonPath}
           >

@@ -320,3 +320,29 @@ describe('in-transcript find', () => {
     expect(input.value).toBe('');
   });
 });
+
+describe('file download buttons', () => {
+  test('desktop: opens the file path via platform.openPath', async () => {
+    const { platform } = await import('@/platform');
+    render(<CompleteScreen doc={doc} onRelabel={async () => {}} txtPath="/x/rec.txt" jsonPath="/x/rec.json" tid="t1" />);
+    fireEvent.click(screen.getByTitle('Open /x/rec.txt'));
+    await waitFor(() => expect(platform.openPath).toHaveBeenCalledWith('/x/rec.txt'));
+  });
+
+  test('web: downloads via platform.downloadTranscriptFile instead of openPath', async () => {
+    const { platform } = await import('@/platform');
+    const download = vi.fn(async () => {});
+    (platform.openPath as ReturnType<typeof vi.fn>).mockClear();
+    (platform as any).downloadTranscriptFile = download;
+    try {
+      render(<CompleteScreen doc={doc} onRelabel={async () => {}} txtPath="/x/rec.txt" jsonPath="/x/rec.json" tid="t1" />);
+      fireEvent.click(screen.getByTitle('Download .txt'));
+      fireEvent.click(screen.getByTitle('Download .json'));
+      await waitFor(() => expect(download).toHaveBeenCalledWith('t1', 'txt'));
+      await waitFor(() => expect(download).toHaveBeenCalledWith('t1', 'json'));
+      expect(platform.openPath).not.toHaveBeenCalled();
+    } finally {
+      delete (platform as any).downloadTranscriptFile;
+    }
+  });
+});

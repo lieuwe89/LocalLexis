@@ -22,4 +22,9 @@ export const platform: Platform = {
     const { webRelabel } = await import('../lib/webRelabel');
     await webRelabel(api, id, mapping);
   },
+  async downloadTranscriptFile(tid, fmt) {
+    const { apiBlob } = await import('../api/client');
+    const { webDownloadTranscriptFile } = await import('../lib/webDownload');
+    await webDownloadTranscriptFile(apiBlob, tid, fmt);
+  },
 };

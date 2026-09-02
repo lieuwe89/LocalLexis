@@ -36,6 +36,9 @@ export interface Platform {
   // Relabel a transcript's speakers. Native: existing /relabel route (which
   // forwards CRDT ops for hub-origin docs). Web: CRDT ops direct to the hub.
   relabelTranscript(id: string, mapping: Record<string, string>): Promise<void>;
+  // Web only: save a transcript's .txt/.json as a browser download (no
+  // filesystem to openPath into). Absent on native, where openPath is used.
+  downloadTranscriptFile?(tid: string, fmt: 'txt' | 'json'): Promise<void>;
 }
 
 let cached: SidecarAuth | null = null;

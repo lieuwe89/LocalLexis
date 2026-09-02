@@ -205,6 +205,29 @@ def delete_transcript(tid: str, request: Request) -> dict:
     return {"ok": True, "trashed": True}
 
 
+_FILE_FORMATS = {"json": "application/json", "txt": "text/plain"}
+
+
+@router.get("/transcripts/{tid}/file/{fmt}")
+def get_transcript_file(
+    tid: str,
+    fmt: str,
+    request: Request,
+    _actor: str = Depends(verify_admin_or_device_or_anonymous),
+):
+    media_type = _FILE_FORMATS.get(fmt)
+    if media_type is None:
+        raise HTTPException(status_code=404, detail=f"unknown format: {fmt}")
+    db = request.app.state.library_db
+    p = db.get_path(tid) or find_sidecar(set(request.app.state.library_dirs), tid)
+    if p is None or not p.exists():
+        raise HTTPException(status_code=404, detail=f"transcript not found: {tid}")
+    target = p if fmt == "json" else p.with_suffix(f".{fmt}")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail=f"no .{fmt} file for transcript: {tid}")
+    return FileResponse(target, media_type=media_type, filename=target.name)
+
+
 _RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 
