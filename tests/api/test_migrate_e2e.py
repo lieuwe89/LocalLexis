@@ -69,7 +69,7 @@ def _write_local_transcript(tmp_path, tid="meeting"):
     json_path = local_dir / f"{tid}.json"
     json_path.write_text(json.dumps({
         "audio_path": str(audio),
-        "segments": [{"speaker": "SPEAKER_00", "text": "hoi wereld"}],
+        "segments": [{"speaker": "SPEAKER_00", "start": 0.0, "end": 1.0, "text": "hoi wereld"}],
         "speakers": {"SPEAKER_00": "SPEAKER_00"},
     }), encoding="utf-8")
 

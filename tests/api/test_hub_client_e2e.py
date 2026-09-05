@@ -85,7 +85,7 @@ def test_pair_upload_sync_roundtrip(hub, tmp_path):
     out.mkdir()
     (out / "meeting.json").write_text(json.dumps({
         "audio_path": received[0] if isinstance(received[0], str) else str(received[0]),
-        "segments": [{"speaker": "SPEAKER_00", "text": "hoi wereld"}],
+        "segments": [{"speaker": "SPEAKER_00", "start": 0.0, "end": 1.0, "text": "hoi wereld"}],
         "speakers": {"SPEAKER_00": "SPEAKER_00"},
     }), encoding="utf-8")
     hub_app.state.library_dirs.add(out)
