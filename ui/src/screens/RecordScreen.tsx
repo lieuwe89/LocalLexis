@@ -7,6 +7,7 @@ interface Props {
   active: boolean;
   paused?: boolean;
   elapsed: number; // seconds
+  error?: string | null;
   outputPath: string;
   selectedDevice: string | null;
   onSelectDevice: (id: string | null) => void;
@@ -17,7 +18,7 @@ interface Props {
 }
 
 export function RecordScreen({
-  devices, active, paused = false, elapsed,
+  devices, active, paused = false, elapsed, error = null,
   outputPath, selectedDevice, onSelectDevice,
   onStart, onStop, onPause, onDiscard,
 }: Props) {
@@ -61,6 +62,12 @@ export function RecordScreen({
           </div>
         </div>
       </div>
+
+      {error && (
+        <div role="alert" style={{ color: 'var(--danger, #d33)', fontFamily: 'var(--mono)', fontSize: 12 }}>
+          Recording failed: {error}
+        </div>
+      )}
 
       <div className="record-controls">
         <button className="btn-secondary" onClick={onPause} disabled={!active}>

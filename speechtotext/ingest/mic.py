@@ -54,6 +54,13 @@ def record_to_file(
     stop = stop_event or threading.Event()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # PortAudio snapshots CoreAudio device IDs once at import. After a
+    # headphone/dock/AirPods hotplug those IDs are dead and InputStream
+    # bails with "device not usable" → silent 0-byte recording. Re-enumerate
+    # right before opening. Safe here: one recording at a time.
+    sd._terminate()
+    sd._initialize()
+
     with _install_stop_signals(stop), sf.SoundFile(
         str(out_path),
         mode="w",

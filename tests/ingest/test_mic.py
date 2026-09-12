@@ -148,3 +148,22 @@ with patch("sounddevice.InputStream", return_value=fake_stream):
     assert info.samplerate == 16000
     assert info.channels == 1
     assert info.frames > 0, "should have captured at least one frame"
+
+
+def test_record_refreshes_portaudio_device_list_before_opening_stream(tmp_path: Path):
+    """PortAudio caches CoreAudio device IDs at import; after a headphone/dock
+    hotplug the cached ID is dead and InputStream bails. record_to_file must
+    re-enumerate right before opening the stream."""
+    order: list[str] = []
+    stop = MagicMock()
+    stop.is_set.return_value = True
+
+    with (
+        patch("sounddevice._terminate", side_effect=lambda: order.append("terminate")),
+        patch("sounddevice._initialize", side_effect=lambda: order.append("initialize")),
+        patch("sounddevice.InputStream", side_effect=lambda **kw: (order.append("open"), MagicMock())[1]),
+        patch("soundfile.SoundFile"),
+    ):
+        record_to_file(tmp_path / "rec.flac", stop_event=stop)
+
+    assert order == ["terminate", "initialize", "open"]

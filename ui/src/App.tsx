@@ -56,7 +56,7 @@ export default function App() {
   useEffect(() => { useBackend.getState().start(); }, []);
   useEffect(() => {
     if (!recording.active || recording.paused) return;
-    const id = setInterval(() => useRecording.getState().tick(0.1), 100);
+    const id = setInterval(() => useRecording.getState().tick(), 100);
     return () => clearInterval(id);
   }, [recording.active, recording.paused]);
 
@@ -127,6 +127,7 @@ export default function App() {
               active={recording.active}
               paused={recording.paused}
               elapsed={recording.elapsed}
+              error={recording.error}
               outputPath={currentAudioPath}
               selectedDevice={recording.deviceId}
               onSelectDevice={(id) => useRecording.getState().setDevice(id)}
@@ -136,16 +137,17 @@ export default function App() {
                 const filename = `recording-${ts}.flac`;
                 const fullPath = await platform.pathJoin(dir, filename);
                 useRecording.getState().reset();
-                const id = await startRecord(fullPath, recording.deviceId ?? undefined);
-                useRecording.getState().setJob(id);
-                useRecording.getState().setActive(true);
                 setCurrentAudioPath(fullPath);
+                const id = await startRecord(fullPath, recording.deviceId ?? undefined);
+                useRecording.getState().start(id);
               }}
               onStop={async () => {
                 const jobId = useRecording.getState().jobId;
                 if (!jobId) return;
-                await stopRecord(jobId);
+                // 404 = job already ended (e.g. mic never opened); don't stay stuck.
+                await stopRecord(jobId).catch(() => {});
                 useRecording.getState().setActive(false);
+                if (useJobs.getState().byId[jobId]?.status === 'failed') return;
                 const transcribeJobId = await startTranscribe(currentAudioPath);
                 setCurrentJobId(transcribeJobId);
                 setRouteState('progress');

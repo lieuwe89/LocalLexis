@@ -38,3 +38,14 @@ test('record button calls onStop when active', () => {
   fireEvent.click(screen.getByTitle('Stop'));
   expect(onStop).toHaveBeenCalled();
 });
+
+test('shows the sidecar error when the recording failed', () => {
+  render(
+    <RecordScreen
+      devices={[]} active={false} elapsed={0} error="PortAudioError: no device"
+      outputPath="/tmp/r.wav" selectedDevice={null}
+      onSelectDevice={() => {}} onStart={() => {}} onStop={() => {}}
+    />
+  );
+  expect(screen.getByRole('alert')).toHaveTextContent('PortAudioError: no device');
+});
