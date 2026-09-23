@@ -71,6 +71,17 @@ android {
     }
 }
 
+// Unit tests only run against debug: the Room schemas above are wired into
+// debug assets only (shipping them in the release APK is pointless), so
+// Migration1To2Test can't find them under testReleaseUnitTest.
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variant ->
+        (variant as com.android.build.api.variant.HasHostTestsBuilder)
+            .hostTests[com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE]
+            ?.enable = false
+    }
+}
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
