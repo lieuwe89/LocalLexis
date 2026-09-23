@@ -160,3 +160,38 @@ async def test_concurrency_cap_queues_second_job(tmp_path, monkeypatch):
         events_b.append(ev)
     assert type(events_b[-1]).__name__ == "CompleteEvent"
     assert reg.get(job_b).status == JobStatus.complete
+
+
+@pytest.mark.asyncio
+async def test_transcribe_job_logs_start_done_and_failure(tmp_path, caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="speechtotext.api.runner")
+    audio = tmp_path / "rec.wav"
+    audio.write_bytes(b"fake")
+    reg = JobRegistry()
+    ok_id = reg.create(kind="transcribe", audio_path=str(audio), device_id="dev-1")
+    bad_id = reg.create(kind="transcribe", audio_path=str(audio))
+
+    with patch("speechtotext.api.runner._build_pipeline") as build, \
+         patch("speechtotext.api.runner.write_transcript") as wt:
+        pipe = MagicMock()
+        pipe.run.return_value = _fake_transcript(audio)
+        build.return_value = (pipe, "cpu")
+        wt.return_value = (audio.with_suffix(".txt"), audio.with_suffix(".json"))
+        sub = reg.subscribe(ok_id)
+        run_transcribe_job(reg, ok_id, audio)
+        async for _ in sub:
+            pass
+
+        pipe.run.side_effect = RuntimeError("boom")
+        sub = reg.subscribe(bad_id)
+        run_transcribe_job(reg, bad_id, audio)
+        async for _ in sub:
+            pass
+
+    text = caplog.text
+    assert f"transcribe job {ok_id} (rec.wav, device=dev-1) started" in text
+    assert f"transcribe job {ok_id} (rec.wav, device=dev-1) done: transcript=rec audio=2.0s segments=1 speakers=1" in text
+    assert f"transcribe job {bad_id} (rec.wav, device=local) failed after" in text
+    assert "RuntimeError: boom" in text

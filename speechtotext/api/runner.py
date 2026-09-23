@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import threading
 import time
@@ -32,6 +33,9 @@ from speechtotext.summarize.prompt import (
 )
 from speechtotext.summarize.provider import ProviderError, provider_from_config
 from speechtotext.writer import write_transcript
+
+
+_log = logging.getLogger(__name__)
 
 
 # Number of top-scoring chunks retrieved for a library-wide ask job.
@@ -96,8 +100,13 @@ def run_transcribe_job(
     cancel = threading.Event()
     _CANCEL_EVENTS[job_id] = cancel
 
+    device_id = registry.get(job_id).device_id
+    tag = f"transcribe job {job_id} ({audio.name}, device={device_id or 'local'})"
+
     def _work() -> None:
         acquired = False
+        t0 = time.monotonic()
+        _log.info("%s started", tag)
         try:
             # Bound concurrent model-loading jobs. Try immediately; if the
             # slot is taken, surface a 'queued' stage and wait for a slot,
@@ -106,6 +115,7 @@ def run_transcribe_job(
                 emit(StageEvent(stage="queued", percent=0.0))
                 while not _TRANSCRIBE_SEM.acquire(timeout=0.5):
                     if cancel.is_set():
+                        _log.info("%s cancelled while queued", tag)
                         emit(ErrorEvent(message="cancelled"))
                         return
             acquired = True
@@ -126,6 +136,13 @@ def run_transcribe_job(
             txt, json_path = write_transcript(
                 transcript, workspace_id=get_workspace_id()
             )
+            _log.info(
+                "%s done: transcript=%s audio=%.1fs segments=%d speakers=%d "
+                "elapsed=%.1fs",
+                tag, audio.stem, transcript.duration_seconds,
+                len(transcript.segments), len(transcript.speakers),
+                time.monotonic() - t0,
+            )
             for seg in transcript.segments:
                 emit(LineEvent(speaker=seg.speaker_id, ts=seg.start, text=seg.text))
             emit(CompleteEvent(
@@ -133,8 +150,13 @@ def run_transcribe_job(
                 paths={"txt": str(txt), "json": str(json_path)},
             ))
         except CancelledError:
+            _log.info("%s cancelled after %.1fs", tag, time.monotonic() - t0)
             emit(ErrorEvent(message="cancelled"))
         except Exception as exc:  # noqa: BLE001
+            _log.exception(
+                "%s failed after %.1fs: %s: %s",
+                tag, time.monotonic() - t0, type(exc).__name__, exc,
+            )
             emit(ErrorEvent(message=f"{type(exc).__name__}: {exc}"))
         finally:
             if acquired:

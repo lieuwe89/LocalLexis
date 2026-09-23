@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import atexit
 import json
+import logging
 import multiprocessing
 import os
 import socket
@@ -62,6 +63,42 @@ def run(host: str = "127.0.0.1", port: int | None = None, print_handshake: bool 
         sys.stdout.write(json.dumps({"locallexis": {"host": host, "port": p}}) + "\n")
         sys.stdout.flush()
     uvicorn.run(create_app(), host=host, port=p, log_level="warning")
+
+
+class _QuietPollFilter(logging.Filter):
+    """Drop successful ``GET /``, ``/app/`` and ``/health`` access-log lines.
+
+    The homelab dashboard polls the hub every minute; those lines drowned
+    the journal. Errors on these paths and everything else still log.
+    """
+
+    _PATHS = {"/", "/app/", "/health"}
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            _client, method, path, _version, status = record.args
+            quiet = method == "GET" and path in self._PATHS and 200 <= int(status) < 400
+        except (TypeError, ValueError):
+            return True
+        return not quiet
+
+
+_QUIET_POLL_FILTER = _QuietPollFilter()
+
+
+def _configure_hub_logging() -> None:
+    """Make ``speechtotext.*`` INFO lines (job start/done/fail) reach stderr.
+
+    uvicorn only configures its own loggers; without a handler here our
+    INFO records are silently dropped and journalctl shows nothing.
+    """
+    log = logging.getLogger("speechtotext")
+    if not log.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
+        log.addHandler(handler)
+        log.setLevel(logging.INFO)
+    logging.getLogger("uvicorn.access").addFilter(_QUIET_POLL_FILTER)
 
 
 def _env_truthy(name: str) -> bool:
@@ -188,6 +225,7 @@ def headless() -> None:
     port = _int_env("LOCALLEXIS_PORT", 8765)
     loopback_port = _int_env("LOCALLEXIS_LOOPBACK_PORT")
     tls = _env_truthy("LOCALLEXIS_TLS_ENABLED")
+    _configure_hub_logging()
     # Headless is the only LAN-reachable entry, so it serves the browser web UI
     # at /app. The loopback sidecar (server.run) leaves serve_webui False.
     app = create_app(serve_webui=True)

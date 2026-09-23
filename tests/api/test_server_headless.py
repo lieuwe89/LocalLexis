@@ -313,3 +313,29 @@ class TestDualBindRunner:
         assert loop_cfg["port"] == 8766
         assert loop_cfg["lifespan"] == "off"
         assert loop_cfg["app"] is sentinel_app
+
+
+def test_access_log_filter_drops_only_successful_polls():
+    import logging
+
+    import uvicorn
+
+    server._configure_hub_logging()
+    # uvicorn.run builds its Config (and dictConfig) after we install the
+    # filter; it must survive that.
+    uvicorn.Config(app=None, log_level="info")
+    access = logging.getLogger("uvicorn.access")
+
+    def kept(method, path, status):
+        rec = access.makeRecord(
+            "uvicorn.access", logging.INFO, __file__, 0,
+            '%s - "%s %s HTTP/%s" %d', ("172.19.0.2:0", method, path, "1.1", status), None,
+        )
+        return access.filter(rec)
+
+    assert not kept("GET", "/", 307)
+    assert not kept("GET", "/app/", 200)
+    assert not kept("GET", "/health", 200)
+    assert kept("GET", "/app/", 500)
+    assert kept("GET", "/transcripts", 200)
+    assert kept("POST", "/", 200)
