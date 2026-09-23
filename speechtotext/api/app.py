@@ -133,8 +133,11 @@ class BearerAuthMiddleware:
             await self.app(scope, receive, send)
             return
         # The web UI's own assets (login page + JS) must load before the user
-        # has a token; the API calls they make stay bearer-gated.
-        if method == "GET" and (path == "/" or path.startswith("/app")):
+        # has a token; the API calls they make stay bearer-gated. /health
+        # returns only {"ok": true}, so uptime monitors may poll it tokenless.
+        if method == "GET" and (
+            path in ("/", "/health") or path.startswith("/app")
+        ):
             await self.app(scope, receive, send)
             return
         auth = ""

@@ -30,29 +30,31 @@ def anon_client(monkeypatch):
     return TestClient(create_app())
 
 
-def test_health_requires_bearer_when_token_env_set(auth_client):
+def test_health_is_public_when_token_env_set(auth_client):
+    # Uptime monitors poll /health without a token; it only returns {"ok": true}.
     r = auth_client.get("/health")
-    assert r.status_code == 401
-
-
-def test_health_accepts_matching_bearer(auth_client):
-    r = auth_client.get("/health", headers={"Authorization": f"Bearer {TOKEN}"})
     assert r.status_code == 200
     assert r.json() == {"ok": True}
 
 
-def test_health_rejects_wrong_token(auth_client):
-    r = auth_client.get("/health", headers={"Authorization": "Bearer nope"})
+def test_jobs_requires_bearer_when_token_env_set(auth_client):
+    r = auth_client.get("/jobs")
     assert r.status_code == 401
 
 
-def test_health_rejects_non_bearer_scheme(auth_client):
-    r = auth_client.get("/health", headers={"Authorization": f"Basic {TOKEN}"})
+def test_jobs_accepts_matching_bearer(auth_client):
+    # The web UI's verifyToken() relies on this route being bearer-only.
+    r = auth_client.get("/jobs", headers={"Authorization": f"Bearer {TOKEN}"})
+    assert r.status_code == 200
+
+
+def test_jobs_rejects_wrong_token(auth_client):
+    r = auth_client.get("/jobs", headers={"Authorization": "Bearer nope"})
     assert r.status_code == 401
 
 
-def test_health_rejects_missing_authorization_header(auth_client):
-    r = auth_client.get("/health")
+def test_jobs_rejects_non_bearer_scheme(auth_client):
+    r = auth_client.get("/jobs", headers={"Authorization": f"Basic {TOKEN}"})
     assert r.status_code == 401
 
 

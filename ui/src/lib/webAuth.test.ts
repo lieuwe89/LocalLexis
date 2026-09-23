@@ -12,9 +12,12 @@ describe('webAuth', () => {
   });
 
   it('verifyToken returns true on 200 and stores it', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    const fetchMock = vi.fn(async (_url: string) => ({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
     expect(await verifyToken('good')).toBe(true);
     expect(getToken()).toBe('good');
+    // /health is public, so it can't verify a token; must hit a bearer-only route.
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/jobs');
   });
 
   it('verifyToken returns false on 401 and does not store', async () => {
